@@ -14,12 +14,13 @@ used — see below.)
 
 ## Steering (`.kiro/steering/`)
 
-Three always-on steering docs encoded the project's non-negotiables so every edit stayed
+Four always-on steering docs encoded the project's non-negotiables so every edit stayed
 consistent:
 - **product.md** — the honesty rules (label SIMULATED, keep MassGIS separate, no cost/carbon
   claims, report infeasibility, same work both runs).
 - **tech.md** — stack (Python stdlib engine + Streamlit), units, determinism, engine/UI separation.
 - **structure.md** — repository layout and naming.
+- **workflow.md** — how changes land: issue → spec → branch → PR → merge (added in #8).
 
 Benefit: the honesty constraints were applied automatically rather than remembered ad hoc.
 They directly shaped the "honest infeasibility" banner and the SIMULATED labels.

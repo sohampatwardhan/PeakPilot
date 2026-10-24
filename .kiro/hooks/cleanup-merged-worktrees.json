@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Remove worktrees after their branch merges",
+      "trigger": "Stop",
+      "description": "After each agent turn, remove any worktree under .worktrees/ whose branch has new commits that are now merged into the branch it was created from (locally or on origin), then delete the branch with git branch -d. Skips fresh, unmerged, locked, or dirty worktrees. Logs to .git/worktree-cleanup.log.",
+      "action": {
+        "type": "command",
+        "command": "python3 .kiro/hooks/scripts/cleanup_merged_worktrees.py",
+        "timeout": 45
+      }
+    }
+  ]
+}

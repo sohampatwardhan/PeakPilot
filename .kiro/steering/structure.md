@@ -20,9 +20,15 @@ PeakPilot/
     test_engine.py        # energy accounting, limits, deadlines, infeasibility, reproducibility
     test_optimal.py       # LP bound <= coordinated peak, energy, comfort, limits, reproducibility
     test_learn.py         # Hypothesis properties + study reproduction for learn.py
+  studies/
+    ml_studies.ipynb      # executed research notebook (SIMULATED; dev machine only, not shipped)
+    s1_thermal_id.py      # S1: room-model calibration
+    s2_forecast_value.py  # S2: what a wrong forecast costs a planner
+    s3_matlab_parity.m    # S3: optional MATLAB cross-check
+    results/              # saved study outputs read by tests/test_learn.py
   .kiro/
     specs/peakpilot/      # requirements.md, design.md, tasks.md (spec planning)
-    specs/ml-models/      # ML spec; studies/ holds the research notebook, scripts, MATLAB cross-check
+    specs/ml-models/      # ML spec (requirements, design, tasks); its evidence is in studies/
     steering/             # product.md, tech.md, structure.md
     KIRO_USAGE.md         # honest write-up of Kiro tools/features used
   docs/
@@ -41,7 +47,7 @@ PeakPilot/
 - `optimal.py` and `learn.py` are the only modules that import SciPy. They benchmark, calibrate
   and score a `Scenario` by calling the engine and the LP; they never schedule what the dashboard
   shows as PeakPilot's behavior, and no learned model makes a control decision.
-- `.kiro/specs/*/studies/` is research run on the development machine. Nothing imports it at
+- `studies/` is research run on the development machine. Nothing imports it at
   runtime, and it is outside the Raspberry Pi image's build context (`rust/peakpilot-core`).
 - `massgis.py` reads only from bundled `data/*.csv`. No network calls at runtime.
 - Every public function and dataclass carries a docstring stating units and assumptions.

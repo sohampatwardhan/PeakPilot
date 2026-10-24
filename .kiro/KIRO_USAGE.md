@@ -50,7 +50,7 @@ describes Kiro.
 "Where could machine learning help, and is it measurable?" was answered with a spec before any
 production code:
 
-- **Studies first.** Three studies (`studies/`, with an executed notebook) measured the benefit:
+- **Studies first.** Three studies (top-level `studies/`, with an executed notebook) measured the benefit:
   the scheduler's reactive floor (7.8 kW vs a 6.03 kW perfect-foresight bound on Hot evening),
   room-model calibration (< 0.5 % parameter error from noisy SIMULATED telemetry), and what a
   wrong forecast costs a planner (a 2 °C cool bias breaks comfort for 462 minutes). Earlier

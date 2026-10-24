@@ -18,7 +18,7 @@
 
 here = fileparts(mfilename('fullpath'));
 res = fullfile(here, 'results');
-repo = fullfile(here, '..', '..', '..', '..');
+repo = fullfile(here, '..');
 out = struct('label', 'SIMULATED; MATLAB R2026b base + Optimization Toolbox', ...
              'matlab_release', version('-release'));
 

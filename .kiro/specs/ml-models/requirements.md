@@ -1,7 +1,7 @@
 # ML models (SciPy and MATLAB) — Requirements
 
 Issue: [#15](https://github.com/sohampatwardhan/PeakPilot/issues/15). Branch `feat/ml-models`, worktree `.worktrees/ml-models`.
-Evidence: `studies/ml_studies.ipynb` (executed, SIMULATED) and the scripts beside it. Numbers below are local
+Evidence: `studies/ml_studies.ipynb` at the repo root (executed, SIMULATED) and the scripts beside it. Numbers below are local
 to this spec.
 
 ## Summary

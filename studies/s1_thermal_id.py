@@ -18,7 +18,7 @@ Methods
     OE  output error: simulate the whole trajectory and fit a, b, T0 with
         scipy.optimize.least_squares. Slower, robust to measurement noise.
 
-Run: python .kiro/specs/ml-models/studies/s1_thermal_id.py
+Run: python studies/s1_thermal_id.py
 Writes results/s1_thermal_id.json and results/s1_telemetry.csv (MATLAB parity input).
 """
 
@@ -35,7 +35,7 @@ import numpy as np
 from scipy import linalg, optimize
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[3]))  # repo root, so `peakpilot` imports
+sys.path.insert(0, str(HERE.parent))  # repo root, so `peakpilot` imports
 
 from peakpilot import engine, optimal, scenarios  # noqa: E402
 

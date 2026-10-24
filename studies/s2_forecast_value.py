@@ -19,7 +19,7 @@ Honesty: every series here is SIMULATED. Part B's history is synthetic, so the
 relation the regression "discovers" was planted by this script. Part B shows the
 pipeline and the error-to-peak sensitivity, not a real-world accuracy claim.
 
-Run: python .kiro/specs/ml-models/studies/s2_forecast_value.py
+Run: python studies/s2_forecast_value.py
 Writes results/s2_forecast_value.json and results/s2_history.csv (MATLAB parity input).
 """
 
@@ -35,7 +35,7 @@ import numpy as np
 from scipy import linalg
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[3]))
+sys.path.insert(0, str(HERE.parent))
 
 from peakpilot import engine, optimal, scenarios  # noqa: E402
 

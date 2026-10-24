@@ -13,7 +13,7 @@
   `scipy.linalg.lstsq` and `scipy.optimize.least_squares` for calibration), pinned in
   `requirements.txt`. Allowed in `peakpilot/optimal.py` and `peakpilot/learn.py` only.
   `engine.py` stays standard library only.
-- **Research studies:** `.kiro/specs/ml-models/studies/` (Python notebook, MATLAB cross-check).
+- **Research studies:** `studies/` at the repo root (Python notebook, MATLAB cross-check).
   Development-machine evidence only: never imported by the app, the tests' code paths, or the
   Raspberry Pi image.
 - **Tests:** pytest for engine correctness (energy accounting, limits, deadlines, infeasibility,

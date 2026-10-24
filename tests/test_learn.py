@@ -18,7 +18,7 @@ from hypothesis import strategies as st
 from peakpilot import engine, learn, optimal, scenarios
 from peakpilot.engine import ThermalParams
 
-STUDY_RESULTS = Path(".kiro/specs/ml-models/studies/results")  # relative to the repo root
+STUDY_RESULTS = Path("studies/results")  # relative to the repo root
 
 
 def _true_ab(p: ThermalParams) -> tuple[float, float]:

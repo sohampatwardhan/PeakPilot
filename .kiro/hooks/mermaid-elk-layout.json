@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Mermaid ELK layout",
+      "trigger": "PostFileSave",
+      "description": "When a Markdown/Mermaid file is saved, ensure flowchart diagrams use the ELK layout engine and are render-validated.",
+      "matcher": "\\.(md|mmd|markdown)$",
+      "action": {
+        "type": "agent",
+        "prompt": "A Markdown or Mermaid file was just saved. For every Mermaid `flowchart`/`graph` diagram in it, ensure the ELK layout engine is enabled by adding a YAML front-matter config block at the very top of the diagram source (inside the ```mermaid fence, before the `flowchart`/`graph` line):\n\n---\nconfig:\n  layout: elk\n---\n\nRules:\n- Apply ELK only to flowchart/graph diagrams. Do NOT add it to sequenceDiagram, gantt, stateDiagram, erDiagram, classDiagram, pie, or other non-flowchart types.\n- If a diagram already has a front-matter block, merge `layout: elk` into its existing `config:` section rather than adding a second block.\n- Do not duplicate the block if `layout: elk` is already present.\n- After editing, render-validate every changed diagram with the Mermaid CLI (`npx -y @mermaid-js/mermaid-cli@12.0.0 -i <file.mmd> -o <out.svg>`), and confirm the output SVG is not Mermaid's error placeholder (check that `aria-roledescription` is not \"error\"). Revert a change if it fails to render.\n- Note for the user if relevant: GitHub's native Mermaid renderer may not support the ELK layout package and can fall back to the default layout; ELK renders in Mermaid Live, editor previews, and mmdc."
+      }
+    }
+  ]
+}

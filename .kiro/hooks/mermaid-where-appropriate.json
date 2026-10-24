@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Mermaid where appropriate",
+      "trigger": "PostFileSave",
+      "description": "When a Markdown file is saved, check whether any passage would be clearer as a Mermaid diagram and add one where it genuinely helps.",
+      "matcher": "\\.(md|markdown)$",
+      "action": {
+        "type": "agent",
+        "prompt": "A Markdown file was just saved. Review its content and decide whether any passage would be materially clearer as a Mermaid diagram. Add a diagram ONLY where it genuinely aids understanding — never decoratively.\n\nLook for these diagram-worthy patterns and use the truthful type:\n- A described architecture, component composition, or data flow -> `flowchart`.\n- A step-by-step process, decision logic, or control flow -> `flowchart` with decision nodes.\n- An ordered interaction/protocol between actors or services over time -> `sequenceDiagram`.\n- A lifecycle or status machine with transitions -> `stateDiagram-v2`.\n- Entities and their relationships / a schema -> `erDiagram`.\n- Real dates or observed intervals (a schedule/timeline) -> `gantt`.\n\nRules:\n- Derive every diagram strictly from what the prose already says. Do not invent components, steps, or relationships that the text does not support.\n- Prefer improving or consolidating an existing diagram over adding a near-duplicate.\n- Skip documents where prose, a table, or a short list already communicates clearly (e.g. simple READMEs, changelogs, checklists). If nothing warrants a diagram, make no change and say so.\n- Place each diagram next to the prose it illustrates, and keep the two in sync.\n- Render-validate every diagram you add or change with the Mermaid CLI (`npx -y @mermaid-js/mermaid-cli@12.0.0 -i <file.mmd> -o <out.svg>`) and confirm the SVG is not Mermaid's error placeholder (its `aria-roledescription` must not be \"error\"). Revert any diagram that fails to render."
+      }
+    }
+  ]
+}

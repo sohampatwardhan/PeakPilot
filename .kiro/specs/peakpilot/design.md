@@ -1,14 +1,27 @@
 # PeakPilot — Design
 
-Concise design for the 6–7 hour build. Validates requirements in `02_requirements.md`.
+Concise design for the 6–7 hour build. Validates requirements in `requirements.md`.
 
 ## Architecture
 
-```
-Streamlit app.py  ──imports──►  peakpilot.engine (stdlib only)
-      │                               ▲
-      ├── peakpilot.scenarios ─────────┤  (Scenario dataclass + named scenarios)
-      └── peakpilot.massgis  ──reads──► data/*.csv (bundled, no network)
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart LR
+    subgraph UI["Streamlit app.py (thin view)"]
+        SB["Sidebar inputs"]
+        OUT["Charts, metrics,\ndecision log, device status"]
+    end
+    SCN["peakpilot.scenarios\n(Scenario dataclass)"]
+    ENG["peakpilot.engine\n(stdlib only)\ncompare() -> CompareResult"]
+    GIS["peakpilot.massgis"]
+    DATA[("data/*.csv\nbundled, no network")]
+
+    SB --> SCN --> ENG --> OUT
+    SB --> GIS --> OUT
+    GIS --> DATA
 ```
 
 The dashboard is a thin view. All control logic lives in `engine.py`. The engine returns a
@@ -28,6 +41,49 @@ The dashboard is a thin view. All control logic lives in `engine.py`. The engine
 - `CompareResult` — `baseline: RunResult`, `coordinated: RunResult`, `peak_reduction_pct`,
   `to_json_dict()`. _Validates: Requirements 1.*, 3.*._
 
+```mermaid
+classDiagram
+    class Scenario {
+        name
+        power_limit_kw
+        base_load
+        outdoor_c
+        thermal
+    }
+    class DeviceSpec {
+        id
+        kind
+        max_kw
+        min_run_min
+        target_kwh
+        deadline_min
+        offline_window
+    }
+    class DeviceState {
+        power_kw
+        delivered_kwh
+        online
+        last_update_min
+        run_remaining_min
+    }
+    class RunResult {
+        peak_kw
+        total_kwh
+        per_device_kwh
+        tasks_met
+        minutes_over_limit
+        temp_violation_min
+        decision_log
+    }
+    class CompareResult {
+        peak_reduction_pct
+        to_json_dict()
+    }
+    Scenario "1" o-- "many" DeviceSpec
+    DeviceSpec "1" --> "1" DeviceState : runtime
+    CompareResult "1" --> "2" RunResult : baseline + coordinated
+```
+
 ## Thermal model (illustrative, documented)
 
 Single first-order RC lump: `room_c[t+1] = room_c[t] + dt/C * ((outdoor_c - room_c)/R - ac_cooling_kw*eta)`.
@@ -46,6 +102,25 @@ Per minute:
 6. Honor minimum run times before switching a device off. _Validates: Requirements 2.4._
 7. Log only on state change. _Validates: Requirements 2.6._
 
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart TD
+    START["New minute"] --> P1["Pass 1 — commit forced loads:\nbase, offline holds,\nAC priority, WH mid min-run"]
+    P1 --> SORT["Pass 2 — sort flexible\ntasks by slack ascending"]
+    SORT --> SLACK{"slack <= 0 ?"}
+    SLACK -->|"yes"| FULL["Full power;\nlog breach if over limit"]
+    SLACK -->|"no"| HEAD{"headroom left?"}
+    HEAD -->|"no"| PAUSE["Pause / hold under limit"]
+    HEAD -->|"yes"| FIT["EV: throttle to headroom\nWH: start only if whole\nmin-run fits the limit"]
+    FULL --> TEMP["Advance room temp (RC)"]
+    PAUSE --> TEMP
+    FIT --> TEMP
+    TEMP --> START
+```
+
 Baseline run = every device pulls full power whenever it has remaining work, ignoring the limit.
 Same workload and inputs as coordinated. _Validates: Requirements 1.4, 3.4._
 
@@ -56,6 +131,24 @@ Same workload and inputs as coordinated. _Validates: Requirements 1.4, 3.4._
 - **P3 Determinism:** `compare(s)` twice yields identical `to_json_dict()`. _Validates: Requirements 1.5._
 - **P4 Feasible limit holds:** on a feasible scenario, coordinated `minutes_over_limit == 0`. _Validates: Requirements 2.1._
 - **P5 Honest infeasible:** on an over-tight scenario, `minutes_over_limit > 0` and/or unmet energy reported, not hidden. _Validates: Requirements 3.2._
+
+Offline-device handling (step 2 above), as an interaction over time:
+
+```mermaid
+sequenceDiagram
+    participant D as Device (SIMULATED)
+    participant C as Controller
+    participant B as Building total
+    D->>C: power + timestamp (online)
+    C->>B: allocate within power limit
+    Note over D,C: device goes offline
+    D--xC: no reading (stale)
+    C->>C: assume last power, reserve headroom, log it
+    C->>B: schedule other loads around the reservation
+    Note over D,C: device reconnects
+    D->>C: power + timestamp (online)
+    C->>C: resume normal control, log reconnect
+```
 
 ## MassGIS loading
 

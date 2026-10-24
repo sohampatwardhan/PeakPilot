@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Context7 up-to-date API docs",
+      "trigger": "UserPromptSubmit",
+      "description": "Before writing or changing code that calls a third-party library, framework, SDK, API, CLI, or cloud service, consult Context7 for current documentation instead of relying on memory.",
+      "action": {
+        "type": "agent",
+        "prompt": "If fulfilling this request involves writing, changing, or debugging code that depends on a third-party library, framework, SDK, public API, CLI tool, or cloud service (for example Streamlit, pandas, plotly, or any external package or HTTP API), first consult the Context7 MCP server for that library's current documentation before committing to an implementation.\n\nHow to call Context7 (verified against the live tool schemas):\n1. `resolve-library-id` — pass `libraryName` (official name with proper punctuation, e.g. 'Next.js') and `query` (what you want to accomplish). It returns matching libraries, each with a Context7 ID in the form `/org/project` (or `/org/project/version`). Pick the best match by name, source reputation, snippet coverage, and benchmark score. You can skip this step only if the user already gave an explicit `/org/project` ID.\n2. `query-docs` — pass the exact `libraryId` from step 1, a specific single-concept `query` (not a vague keyword; one topic per call, or interacting concepts together), and optionally `language` (e.g. 'Python') so examples match this project.\n3. Prefer the versions pinned in this project (requirements.txt / pyproject.toml) — pass `/org/project/version` when the project pins one, so the docs match what actually runs.\n4. Base the implementation on what Context7 returns rather than on memory, especially for API signatures, parameters, configuration keys, and version-specific behavior.\n5. Briefly note in your response which library/version you verified via Context7 and anything that changed your approach.\n\nLimits and fallbacks: call each Context7 tool at most 3 times per question; if you cannot find what you need, use the best result you have. Never include secrets (API keys, passwords, credentials, proprietary code) in a Context7 query. Skip Context7 entirely when the task touches no library/API (pure stdlib logic, refactoring, docs, or general reasoning) — do not consult it gratuitously. Never let unavailable docs block progress: if Context7 has no entry, say so and proceed with clearly-stated assumptions."
+      }
+    }
+  ]
+}

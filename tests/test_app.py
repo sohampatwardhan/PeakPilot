@@ -18,7 +18,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 
 from pathlib import Path  # noqa: E402
 
-from peakpilot import massgis, scenarios  # noqa: E402
+from peakpilot import engine, massgis, optimal, scenarios  # noqa: E402
 
 pytestmark = pytest.mark.dashboard
 
@@ -90,14 +90,34 @@ def test_deadline_sliders_use_clock_labels():
         assert slider.options[0] == "17:00"
         assert slider.options[-1] == "08:00"
         assert "07:00" in slider.options
+        assert "06:30" in slider.options  # half-hour steps: the water heater's default
 
 
-def test_deadline_hour_maps_to_same_minutes_as_before():
+def test_deadline_slider_values_are_minutes_from_1600():
     at = _run()
     ev = next(s for s in at.sidebar.select_slider if s.label == "EV deadline")
-    ev.set_value(20).run()  # 20:00 → (20 - 16) * 60 = 240 minutes into the window
+    ev.set_value(240).run()  # 240 minutes after 16:00 == 20:00
     assert not at.exception
-    assert next(s for s in at.sidebar.select_slider if s.label == "EV deadline").value == 20
+    ev = next(s for s in at.sidebar.select_slider if s.label == "EV deadline")
+    assert ev.value == 240
+    assert ev.format_func(ev.value) == "20:00"
+    wh = next(s for s in at.sidebar.select_slider if s.label == "Water-heater deadline")
+    assert wh.value == 870 and wh.format_func(870) == "06:30"
+
+
+@pytest.mark.parametrize("scenario_name", SCENARIO_NAMES)
+def test_default_sliders_reproduce_the_named_scenario(scenario_name):
+    # Issue #19: with untouched sliders the dashboard must run exactly the named scenario,
+    # including its outdoor temperature (Infeasible is a 34 °C evening) and the water
+    # heater's 06:30 deadline.
+    at = _run(scenario_name)
+    expected = engine.compare(scenarios.scenarios()[scenario_name]())
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["Coordinated peak"] == f"{expected.coordinated.peak_kw:.1f} kW"
+    assert metrics["Baseline peak"] == f"{expected.baseline.peak_kw:.1f} kW"
+    assert metrics["Min over limit"] == f"{expected.coordinated.minutes_over_limit}"
+    bound = optimal.solve(scenarios.scenarios()[scenario_name]()).peak_kw
+    assert metrics["Lower bound on achievable peak (kW)"] == f"{bound:.2f}"
 
 
 def test_peak_cards_show_units():

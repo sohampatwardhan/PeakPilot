@@ -44,7 +44,8 @@ tests/                 pytest suite (engine, scenarios, MassGIS, dashboard smoke
 tests/test_optimal.py  LP benchmark properties (bound, energy, comfort, reproducibility)
 tests/test_learn.py    Hypothesis property tests + study reproduction for learn.py
 .kiro/specs/peakpilot/ requirements.md, design.md, tasks.md
-.kiro/specs/ml-models/ ML spec + studies/ (research notebook, MATLAB cross-check; not shipped)
+.kiro/specs/ml-models/ ML spec (requirements, design, tasks)
+studies/               ML research: notebook, study scripts, MATLAB cross-check (not shipped)
 .kiro/steering/        always-on project rules
 ```
 

@@ -1,6 +1,6 @@
 """Learned models as analysis next to the scheduler (SciPy; all values SIMULATED).
 
-Two pieces, both from the studies in ``.kiro/specs/ml-models/studies/``:
+Two pieces, both from the studies in ``studies/``:
 
 * **Thermal calibration** (:func:`fit_thermal`). Fit the engine's first-order room
   model to thermostat-style telemetry (room °C, outdoor °C, AC kW per minute). The

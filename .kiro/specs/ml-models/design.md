@@ -1,6 +1,6 @@
 # ML models (SciPy and MATLAB) — Design
 
-Issue: [#15](https://github.com/sohampatwardhan/PeakPilot/issues/15). Validates `requirements.md` in this folder. Evidence: `studies/ml_studies.ipynb` (executed; every figure below
+Issue: [#15](https://github.com/sohampatwardhan/PeakPilot/issues/15). Validates `requirements.md` in this folder. Evidence: `studies/ml_studies.ipynb` at the repo root (executed; every figure below
 comes from it) and `studies/results/*.json`. Everything is SIMULATED.
 
 ## Overview

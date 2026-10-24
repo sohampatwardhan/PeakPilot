@@ -207,7 +207,7 @@ Two SciPy models in `peakpilot/learn.py` sit beside the scheduler, never in plac
   462 minutes. That is why PeakPilot's control stays reactive.
 
 The research behind both, including a MATLAB R2026b cross-check that matches SciPy to ~1e-8,
-is in `.kiro/specs/ml-models/studies/` (`ml_studies.ipynb`). It runs on a development machine
+is in `studies/` (`ml_studies.ipynb`). It runs on a development machine
 only: the app does not import it, and judges do not need MATLAB.
 
 ## Massachusetts context
@@ -357,6 +357,7 @@ rust/peakpilot-core/    Rust port of the engine + CLI + Raspberry Pi Dockerfile
 scripts/parity_check.py Python vs Rust output comparison (run in CI)
 data/                   MassGIS CSVs + DATA.md provenance
 tests/                  pytest suite (engine, scenarios, MassGIS, dashboard smoke, LP benchmark, learn)
+studies/                ML research notebook + study scripts + MATLAB cross-check (dev only)
 .kiro/                  steering, specs, and the Kiro usage write-up
 docs/                   demo script + submission checklist
 ```

@@ -100,7 +100,11 @@ Per minute:
 4. Sort remaining tasks by slack ascending; allocate up to `power_limit - committed` greedily.
 5. Any task with slack ≤ 0 runs at full power regardless of limit; record the breach. _Validates: Requirements 2.3._
 6. Honor minimum run times before switching a device off. _Validates: Requirements 2.4._
-7. Log only on state change. _Validates: Requirements 2.6._
+7. Log only on state change. Each energy task is classified every minute as `done`, `offline`,
+   `off`, `over_limit`, `throttled`, or `full` from its final power, and an entry is written
+   only when that differs from the previous minute, so a breach is logged once per episode.
+   The AC logs its own on/off edges. Logging never feeds back into scheduling (#25).
+   _Validates: Requirements 2.6._
 
 ```mermaid
 ---

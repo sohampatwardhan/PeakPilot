@@ -1,0 +1,7 @@
+# Extra pins for the ML studies notebook (not needed by the app or the test suite).
+# pip install -r requirements.txt -r .kiro/specs/ml-models/studies/requirements.txt
+-r ../../../../requirements.txt
+matplotlib==3.11.2
+nbformat==5.11.1
+nbclient==0.11.0
+ipykernel==7.4.0

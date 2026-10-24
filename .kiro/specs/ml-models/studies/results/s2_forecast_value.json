@@ -1,0 +1,146 @@
+{
+  "label": "SIMULATED; Part B history is synthetic",
+  "seed": 20261024,
+  "scenario": "Hot evening (14 kW limit)",
+  "part_a": {
+    "reactive_floor_limit_kw": 7.8,
+    "reactive_floor_peak_kw": 7.800000000000001,
+    "perfect_bound_kw": 6.027968043460415,
+    "cases": [
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.027968043460415,
+        "realized_peak_kw": 6.027968043460415,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "perfect",
+        "base_mae_kw": 0.0
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 5.7262164101271225,
+        "realized_peak_kw": 6.147266410127123,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "base x0.9",
+        "base_mae_kw": 0.29868237499999994
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.329719676793741,
+        "realized_peak_kw": 6.08107967679374,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "base x1.1",
+        "base_mae_kw": 0.2986823750000003
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.631471310127082,
+        "realized_peak_kw": 6.134191310127082,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "base x1.2",
+        "base_mae_kw": 0.5973647499999999
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.020916599016048,
+        "realized_peak_kw": 6.353216599016048,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "base 30 min early",
+        "base_mae_kw": 0.11851781249999999
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.002253821238193,
+        "realized_peak_kw": 6.6520538212381926,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "base 60 min early",
+        "base_mae_kw": 0.22457947916666665
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.029127599016054,
+        "realized_peak_kw": 6.377927599016054,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "base 30 min late",
+        "base_mae_kw": 0.12142322916666666
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.028469043460412,
+        "realized_peak_kw": 6.711769043460412,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "base 60 min late",
+        "base_mae_kw": 0.23773031249999999
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.024428796164136,
+        "realized_peak_kw": 6.7905357314792445,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "base noise 0.2 kW",
+        "base_mae_kw": 0.1602570851457508
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.021913367508681,
+        "realized_peak_kw": 7.884897030153652,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.999999999999996,
+        "case": "base noise 0.5 kW",
+        "base_mae_kw": 0.3969185725998117
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 5.849289808887096,
+        "realized_peak_kw": 5.849289808887097,
+        "comfort_violation_min": 462,
+        "max_room_c": 26.9999999999956,
+        "case": "outdoor -2 \u00b0C",
+        "base_mae_kw": 0.0
+      },
+      {
+        "status": "optimal",
+        "planned_peak_kw": 6.240178771544539,
+        "realized_peak_kw": 6.240178771544539,
+        "comfort_violation_min": 0,
+        "max_room_c": 24.731867283950614,
+        "case": "outdoor +2 \u00b0C",
+        "base_mae_kw": 0.0
+      }
+    ]
+  },
+  "part_b": {
+    "train_days": 90,
+    "test_days": 30,
+    "ridge_lambda": 1.0,
+    "perfect_bound_mean_kw": 5.706068695256586,
+    "models": {
+      "persistence (yesterday)": {
+        "mae_kw": 0.41262904853124477,
+        "mean_excess_peak_kw": 0.6879606782195611,
+        "p90_excess_peak_kw": 0.8335837093574345,
+        "comfort_violation_days": 0
+      },
+      "climatology (mean day)": {
+        "mae_kw": 0.3657922274673819,
+        "mean_excess_peak_kw": 0.4866996478272824,
+        "p90_excess_peak_kw": 0.5518685840056666,
+        "comfort_violation_days": 0
+      },
+      "ridge on outdoor peak": {
+        "mae_kw": 0.14088027469846578,
+        "mean_excess_peak_kw": 0.45451956504635493,
+        "p90_excess_peak_kw": 0.5422109177633042,
+        "comfort_violation_days": 0
+      }
+    }
+  }
+}

@@ -65,8 +65,9 @@ production code:
   engineering contribution and it is far easier to verify than a learned policy. Learned models
   appear only as analysis beside it (see the ML studies spec above).
 - **A test-on-save hook** — pytest was already run at every change. The hooks that were added
-  (`.kiro/hooks/`) do other jobs: a Context7 docs reminder, a destructive-command guard, and
-  Mermaid diagram layout and validation.
+  (`.kiro/hooks/`) do other jobs: a Context7 docs reminder, a destructive-command guard,
+  Mermaid diagram layout and validation, and a Stop hook that removes `.worktrees/` checkouts
+  once their branch is merged (#23).
 
 ## Net effect
 

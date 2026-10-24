@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Ask before destructive commands",
+      "trigger": "PreToolUse",
+      "description": "Before the agent runs a shell command, ask the user to confirm if it is destructive (rm, git reset --hard, force push, file-overwriting redirects, ...). Non-destructive commands pass through untouched.",
+      "matcher": "^(execute_bash|control_bash_process)$",
+      "action": {
+        "type": "command",
+        "command": "python3 .kiro/hooks/scripts/guard_destructive.py",
+        "timeout": 10
+      }
+    }
+  ]
+}

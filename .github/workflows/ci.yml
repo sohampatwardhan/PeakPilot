@@ -37,7 +37,7 @@ jobs:
           # in AGENTS.md: peakpilot/engine.py stays pure standard library.
           import ast, sys, pathlib
 
-          third_party = {"streamlit", "pandas", "plotly", "numpy"}
+          third_party = {"streamlit", "pandas", "plotly", "numpy", "scipy"}
           src = pathlib.Path("peakpilot/engine.py").read_text()
           tree = ast.parse(src)
           bad = []

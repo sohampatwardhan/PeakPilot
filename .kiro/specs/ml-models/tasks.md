@@ -35,8 +35,8 @@ branch. The rest are the implementation plan.
 - [x] 11 Update steering (product.md In list; tech.md and structure.md "SciPy in `optimal.py` and `learn.py`"),
   AGENTS.md, the README, and `.kiro/KIRO_USAGE.md` (studies, MATLAB cross-check, PBT). Add a DEMO_SCRIPT line only
   if it stays within 2:30. _Requirements: 4.3, 4.4, 5.2_ (DEMO_SCRIPT left unchanged.)
-- [ ] 12 Run `pytest -q --cov` once more, commit, and open a PR with `Closes #15`, the study headline numbers
-  and the test results. Merge only with the user's go-ahead. _Requirements: 6.4_
+- [x] 12 Run `pytest -q --cov` once more, commit, and open a PR with `Closes #15`, the study headline numbers
+  and the test results. Merge only with the user's go-ahead. _Requirements: 6.4_ (PR #18.)
 
 ## Follow-ups (separate issues, not this spec)
 

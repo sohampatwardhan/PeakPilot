@@ -1,68 +1,153 @@
-# PeakPilot — demo script (target 2:30, hard cap 3:00)
+# PeakPilot — demo script (target 2:35, hard cap 3:00)
 
-Spoken script for the submission video. Times are cumulative, at about 150 spoken words
-per minute. Keep device data framed as SIMULATED; keep MassGIS framed as public fact.
-Every number below was checked against `main` (Hot evening unless noted).
+Spoken script for the submission video: six intro slides, the live dashboard, then the
+closing slide. Times are cumulative, at about 150 spoken words per minute, with a few
+seconds left for clicks. Keep device data framed as SIMULATED; keep MassGIS framed as
+public fact. Every number below was checked against `main` (Hot evening unless noted).
+
+The deck is `docs/PeakPilot_deck.pptx`. Slides 1–7 play in the slideshow; slides 8–14 are
+hidden backup (detailed results the live demo already shows).
+
+| Part | Time | What it covers |
+| --- | --- | --- |
+| Intro slides 1–6 | 0:00–1:01 | Problem, approach, who benefits, how Kiro was used |
+| Live demo | 1:03–2:23 | The project working: result, log, optimality, honesty, MassGIS |
+| Closing slide 7 | 2:25–2:34 | Limits, repo, thanks |
 
 ---
 
-**[0:00–0:22] The problem**
+## Part 1 — Intro slides
 
-"Clean power still has to show up at the peak. When an EV charger, a water heater and an
-air conditioner all run at once on a hot evening, a building spikes the grid right when
-it's most strained. PeakPilot asks: which load can wait, and for how long, while still
-getting everything done?"
+**[0:00–0:10] Slide 1 · Title**
 
-**[0:22–0:38] The setup**
+"I'm Soham, and this is PeakPilot, for Climate Tech challenge C3. It cuts a building's
+peak demand without cutting the work it has to do."
 
-"On the left I pick a scenario and set the building's power limit, plus how much energy
-the EV and water heater need and by when. All device data is simulated and labeled. Hot
-evening, 14-kilowatt limit."
+**[0:10–0:22] Slide 2 · The peak**
 
-**[0:38–1:08] The headline result**
+"Clean power still has to show up at the peak. On a hot evening the EV charger, water
+heater and AC all switch on together, and the building spikes."
 
-"The same evening, run twice. In red, uncoordinated: the building peaks at 19 kilowatts
-and sits over the limit for three hours. In green, PeakPilot holds 14 kilowatts — a 26%
-lower peak, zero minutes over, every deadline met. The EV and water heater get exactly
-the same energy in both runs; the peak dropped because work moved into the night, not
-because anything was skipped."
+**[0:22–0:30] Slide 3 · Which load can wait**
 
-**[1:08–1:22] Why, in plain language**
+"Some of those loads can wait, but each has a deadline. PeakPilot asks which one can
+wait, and for how long."
 
-"Every decision is logged: the EV throttled to fit the limit, the water heater paused to
-hold the building under it. And the room never crosses the 25-degree comfort limit."
+**[0:30–0:38] Slide 4 · Measure, decide, act, explain**
 
-**[1:22–1:52] How close to optimal?**
+"Every minute it measures each device, decides with a deterministic least-slack-first
+rule, acts, and logs why in plain language."
 
-"How good is that? A linear program with perfect foresight of the whole evening puts a
-lower bound on the peak: about 6 kilowatts. The lowest limit PeakPilot itself can hold is 7.8 —
-so perfect foresight would buy 1.8 kilowatts. Could a forecast get it? Here, a forecast
-just 2 degrees too cool breaks the comfort limit for nearly eight hours. That's why
-PeakPilot's control stays reactive and explainable."
+**[0:38–0:49] Slide 5 · Who benefits**
 
-**[1:52–2:10] Honesty: offline + infeasible**
+"That could let building owners add EV chargers and heat pumps under the limit they
+already have, and give the grid load that moves out of the peak."
 
-"When the EV charger drops offline, PeakPilot can't command it, so it reserves its last
-power and says so. And this 8-kilowatt scenario is honestly infeasible: PeakPilot reports
-the minutes over the limit instead of hiding them."
+**[0:49–1:01] Slide 6 · How Kiro built it**
 
-**[2:10–2:28] Massachusetts context + close**
+"It was built spec-first in Kiro: specs, steering docs that hold the honesty rules,
+agent hooks, MCP to check the live app, and property tests that found two real bugs."
 
-"Pick a town to see its electric utility and landfill renewable projects from MassGIS —
-public facts, kept separate from the simulation. PeakPilot makes the tradeoffs of a
-reliable clean grid visible, honestly. Thanks."
+*Cut to the running dashboard (about 2 s).*
+
+---
+
+## Part 2 — Live demo
+
+### What to demonstrate
+
+The rules require footage of the project working, so this part carries the video. Show
+each item below once, in this order. Each one backs a judging criterion.
+
+1. **The dashboard running, with SIMULATED labels.** Shows the working project and
+   the honesty rules. (Quality and design)
+2. **Same evening, run twice.** The headline: 19.0 → 14.0 kW peak, 180 → 0 minutes
+   over the limit, 2/2 deadlines met, and the same EV and water-heater energy in both
+   runs. (Potential value)
+3. **The decision log and the room temperature.** Every action has a plain-language
+   reason, and the room stays at or below 25 °C. (Quality and design)
+4. **How close to optimal, and the cost of a wrong forecast.** LP lower bound 6.03 kW,
+   reactive floor 7.8 kW, and a forecast 2 °C too cool means 462 minutes above comfort.
+   (Implementation depth)
+5. **Honesty under failure.** The offline EV charger is shown as OFFLINE, and the
+   infeasible 8 kW case raises a warning banner instead of hiding the minutes over the
+   limit. (Rules: report infeasibility)
+6. **Massachusetts context.** A town's utility and landfill renewable projects from
+   MassGIS, with source and date, kept apart from the simulation. (Unique public
+   dataset)
+7. *(Optional, about +12 s)* **Sunny evening + rooftop PV.** Simulated PV with MPPT
+   lowers net grid import: 17.2 → 11.0 kW, 0 minutes over the 11 kW limit. Total stays
+   under 2:50.
+
+### Narration
+
+**[1:03–1:12] Setup**
+
+"Here's the live dashboard. All device data is simulated and labeled. Hot evening,
+14-kilowatt limit."
+
+**[1:12–1:28] The headline result**
+
+"Same evening, run twice. Uncoordinated, in red, it peaks at 19 kilowatts and sits over
+the limit for three hours. PeakPilot, in green, holds 14: a 26% lower peak, zero minutes
+over, every deadline met, and the EV and water heater get exactly the same energy."
+
+**[1:28–1:35] Why, in plain language**
+
+"Every decision is logged, and the room stays under 25 degrees."
+
+**[1:35–1:55] How close to optimal?**
+
+"How good is that? A perfect-foresight linear program puts the lowest possible peak at
+about 6 kilowatts; PeakPilot can hold 7.8. But a forecast just 2 degrees too cool breaks
+comfort for nearly eight hours, so control stays reactive."
+
+**[1:55–2:12] Honesty: offline + infeasible**
+
+"If the EV charger drops offline, PeakPilot reserves its last power and says so. And
+this 8-kilowatt case is impossible: it reports the minutes over the limit instead of
+hiding them."
+
+**[2:12–2:23] Massachusetts context**
+
+"Pick a town to see its utility and landfill renewable projects from MassGIS, public
+facts kept apart from the simulation."
+
+*Optional PV segment, insert here:* "With simulated rooftop solar tracking its maximum
+power point, the same building holds an 11-kilowatt limit."
+
+*Cut back to the deck, slide 7 (about 2 s).*
+
+---
+
+## Part 3 — Closing slide
+
+**[2:25–2:34] Slide 7 · Honest limits, and what's next**
+
+"Everything simulated is labeled, and no cost or carbon savings are claimed. The code,
+specs, steering and hooks are on GitHub. Thanks."
 
 ---
 
 ## Click sequence (rehearse this)
 
-1. Scenario = **Hot evening (14 kW)**. Point at the metric cards, then the demand chart.
-2. Scroll to the decision log (AC on/off rows are hidden by default), then the room-temperature chart.
-3. Scroll to **How close to optimal?** Point at Reactive floor 7.8, Lower bound 6.03, Headroom 1.77.
-   Open **What if the forecast is wrong?** and set **Outdoor forecast error** to **−2.0**:
-   the warning reads 462 minutes above comfort.
-4. Switch scenario to **EV offline 18:00–18:45**. Point at the OFFLINE device row and the log.
-5. Switch to **Infeasible (8 kW, early EV deadline)**. Point at the honesty banner.
-6. Change **Town** to one with projects (e.g. Carver or Barnstable). Show the MassGIS panel.
+Before recording: start `streamlit run app.py`, open the deck, and start the slideshow
+from slide 1. Hidden slides 8–14 are skipped automatically.
 
-Tip: reset the forecast slider to 0.0 after step 3, or use **↺ Reset to scenario defaults**.
+1. Slides 1–6, then switch to the browser.
+2. Scenario = **Hot evening (14 kW)**. Point at the metric cards, then the demand chart.
+3. Scroll to the decision log (AC on/off rows are hidden by default), then the
+   room-temperature chart.
+4. Scroll to **How close to optimal?** Point at Reactive floor 7.8, Lower bound 6.03,
+   Headroom 1.77. Open **What if the forecast is wrong?** and set **Outdoor forecast
+   error** to **−2.0**: the warning reads 462 minutes above comfort.
+5. Use **↺ Reset to scenario defaults**, then switch scenario to **EV offline
+   18:00–18:45**. Point at the OFFLINE device row and the log.
+6. Switch to **Infeasible (8 kW, early EV deadline)**. Point at the honesty banner.
+7. Change **Town** to one with projects (e.g. Carver or Barnstable). Show the MassGIS panel.
+8. *(Optional)* Switch to **Sunny evening + rooftop PV (11 kW)**. Point at the PV line on
+   the chart and the Rooftop PV metrics.
+9. Switch back to the slideshow and advance to slide 7.
+
+Tips: record the slides and the dashboard as separate takes and join them if a live switch
+is awkward. Check the final cut is under 3:00 before uploading; judges stop at three minutes.

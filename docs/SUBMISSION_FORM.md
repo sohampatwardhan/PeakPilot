@@ -69,8 +69,14 @@ implementation (PRs #16–#18), the dashboard fix (#21) and these submission doc
 by Claude Code, not Kiro. `KIRO_USAGE.md` says so. The judges score Kiro usage, so leave that
 work out of the Kiro answer or name the tool that did it.
 
-- **Tools:** **[confirm]** Kiro IDE, Kiro CLI and Kiro Crew. Local Kiro session logs exist
-  for all three; say how they differed in your own words.
+- **Tools:** Kiro IDE, Kiro CLI and Kiro Crew, each with its own job (confirmed from the
+  local Kiro session logs):
+  - **IDE** wrote the specs and the code, including the optimal-benchmark spec and its PR.
+  - **CLI** ran a design review of the live dashboard through chrome-devtools at an 858 px
+    viewport. That review led to issue #13 and PR #14.
+  - **Crew** worked alongside the IDE. It read the IDE's session logs to pick up the
+    in-flight work, merged PR #12, cleaned up merged branches, and rebuilt the environment
+    to launch the app.
 - **Spec-driven development:** Kiro specs under `.kiro/specs/`: `peakpilot`,
   `optimal-benchmark`, `rust-engine` and `test-framework`. Each has requirements, design and
   tasks, and tasks trace to requirements. Kiro also wrote `.kiro/steering/workflow.md`, the

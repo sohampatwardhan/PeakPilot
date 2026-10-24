@@ -56,6 +56,34 @@ This is the **C3 challenge** from the Hackachusetts 2026 Energy & climate tech t
 3. **Act** — It throttles or defers flexible loads to stay under the limit.
 4. **Explain** — The dashboard logs a reason for each action, e.g. `17:30 ev-1: throttled to fit power limit`.
 
+### Architecture
+
+The dashboard is a thin view. All control logic lives in a pure-standard-library engine,
+so the same engine could drive a different front end or real devices later.
+
+```mermaid
+flowchart LR
+    subgraph UI["Streamlit dashboard (app.py)"]
+        SB["Sidebar: scenario,\npower limit, device knobs, town"]
+        CH["Charts, metric cards,\ndecision log, device status"]
+    end
+    subgraph ENG["peakpilot.engine (stdlib only)"]
+        BASE["run_baseline\n(uncoordinated)"]
+        COORD["run_coordinated\n(least-slack-first)"]
+        CMP["compare() -> CompareResult"]
+    end
+    SCN["peakpilot.scenarios\n(reproducible Scenario)"]
+    GIS["peakpilot.massgis\n(bundled CSVs, no network)"]
+    DATA[("data/*.csv\nMassGIS snapshot")]
+
+    SB --> SCN --> CMP
+    CMP --> BASE
+    CMP --> COORD
+    CMP --> CH
+    SB --> GIS --> CH
+    GIS --> DATA
+```
+
 ### Devices modeled
 
 | Device | Constraint | Controller action |
@@ -70,12 +98,54 @@ All device readings and thermal behavior are clearly labeled **SIMULATED**.
 
 The controller uses **least-slack-first** scheduling. Each task's slack is the time until its deadline minus the time it needs at full power. The task with the least slack gets power first. If a task runs out of slack, it runs at full power even if that breaks the limit, and the log records it.
 
+Each one-minute step runs a two-pass allocation: commit the loads that cannot be throttled this minute, then distribute whatever headroom remains to the flexible tasks by slack.
+
+```mermaid
+flowchart TD
+    START["New minute"] --> ONLINE["Refresh online/offline state"]
+    ONLINE --> P1["Pass 1 — commit forced loads:\nbase load, offline holds,\nAC priority if room near comfort,\nwater heater mid min-run"]
+    P1 --> SORT["Pass 2 — sort flexible tasks\nby slack (ascending)"]
+    SORT --> LOOP{"For each task,\nslack <= 0 ?"}
+    LOOP -->|"yes (out of slack)"| FULL["Run full power,\nlog breach if over limit"]
+    LOOP -->|"no"| HEAD{"Headroom left?"}
+    HEAD -->|"no"| PAUSE["Pause / hold under limit"]
+    HEAD -->|"yes"| FIT["EV: throttle to headroom\nWH: start only if whole\nmin-run fits the limit"]
+    FULL --> NEXT["Commit power, log state changes"]
+    PAUSE --> NEXT
+    FIT --> NEXT
+    NEXT --> TEMP["Advance room temperature\n(RC thermal model)"]
+    TEMP --> START
+```
+
 Design principles:
 
 - **Honest infeasibility.** When a limit cannot be met (for example, the AC must run to keep the room comfortable), the controller reports the minutes over the limit instead of hiding them.
 - **Equipment-realistic behavior.** The water heater and air conditioner honor minimum run times so relays don't cycle every minute.
 - **IoT failure handling.** When a device goes offline, the controller can't command it, assumes it holds its last power level, reserves that headroom, and defers other loads until it reconnects. A stale reading visibly changes the device's status.
 - **Same work, lower peak.** Both runs deliver the same total energy, so peak reduction never comes from skipping work. A lower peak achieved by leaving tasks unfinished counts as a failure, not a win.
+
+### Offline device handling
+
+When a device stops reporting, the controller cannot command it. Rather than guess, it
+holds the device's last commanded power, reserves that headroom so it does not over-commit
+the building, and discloses the assumption in the decision log until the device reconnects.
+
+```mermaid
+sequenceDiagram
+    participant EV as EV charger (SIMULATED)
+    participant C as Controller
+    participant B as Building total
+
+    EV->>C: power + timestamp (online)
+    C->>B: allocate within power limit
+    Note over EV,C: 18:00 — charger goes offline
+    EV--xC: no reading (stale)
+    C->>C: assume EV holds last power,\nreserve that headroom, log it
+    C->>B: schedule other loads around the reservation
+    Note over EV,C: 18:45 — charger reconnects
+    EV->>C: power + timestamp (online)
+    C->>C: resume normal control, log reconnect
+```
 
 ## Massachusetts context
 

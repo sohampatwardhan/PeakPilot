@@ -80,3 +80,48 @@ def test_infeasible_scenario_shows_honest_warning():
     at = _run("Infeasible (8 kW, early EV deadline)")
     assert at.warning
     assert "Honest infeasibility" in at.warning[0].value
+
+
+def test_deadline_sliders_use_clock_labels():
+    at = _run()
+    labels = {s.label: s for s in at.sidebar.select_slider}
+    for name in ("EV deadline", "Water-heater deadline"):
+        slider = labels[name]
+        assert slider.options[0] == "17:00"
+        assert slider.options[-1] == "08:00"
+        assert "07:00" in slider.options
+
+
+def test_deadline_hour_maps_to_same_minutes_as_before():
+    at = _run()
+    ev = next(s for s in at.sidebar.select_slider if s.label == "EV deadline")
+    ev.set_value(20).run()  # 20:00 → (20 - 16) * 60 = 240 minutes into the window
+    assert not at.exception
+    assert next(s for s in at.sidebar.select_slider if s.label == "EV deadline").value == 20
+
+
+def test_peak_cards_show_units():
+    at = _run()
+    peaks = {m.label: m.value for m in at.metric}
+    assert peaks["Coordinated peak"].endswith(" kW")
+    assert peaks["Baseline peak"].endswith(" kW")
+    assert peaks["Energy delivered"].endswith(" kWh")
+
+
+def test_energy_delta_is_neutral_when_tasks_match():
+    at = _run()  # Hot evening: every task met, so only AC runtime can differ
+    energy = next(m for m in at.metric if m.label == "Energy delivered")
+    assert "AC runtime" in energy.delta or energy.delta == "same as baseline"
+
+
+def test_ac_cycling_hidden_by_default_and_toggle_restores_it():
+    at = _run()
+    log = at.dataframe[0].value
+    assert not log["message"].str.startswith(("cooling ON", "cooling OFF")).any()
+    hidden_rows = len(log)
+
+    at.toggle[0].set_value(True).run()
+    assert not at.exception
+    full = at.dataframe[0].value
+    assert full["message"].str.startswith(("cooling ON", "cooling OFF")).any()
+    assert len(full) > hidden_rows

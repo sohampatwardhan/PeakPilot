@@ -1,0 +1,64 @@
+name: Rust engine
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["rust/**", "peakpilot/**", "scripts/parity_check.py", ".github/workflows/rust.yml"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-parity:
+    name: cargo test + Python/Rust parity
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust/peakpilot-core
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy && rustup default stable
+
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests (unit, scenario, and 256-case property tests)
+        run: cargo test --release --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Parity check against the Python engine
+        working-directory: .
+        run: |
+          pip install -e .
+          python scripts/parity_check.py --bin rust/peakpilot-core/target/release/peakpilot
+
+  pi-image:
+    name: Raspberry Pi 4/5 image (linux/arm64)
+    # Native arm64 runner, so the image builds without QEMU emulation.
+    runs-on: ubuntu-24.04-arm
+    needs: test-and-parity
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: rust/peakpilot-core
+          platforms: linux/arm64
+          load: true
+          tags: peakpilot:arm64
+      - name: Smoke test the image
+        run: |
+          docker run --rm peakpilot:arm64 list
+          docker run --rm peakpilot:arm64 run --scenario hot_evening --table
+          docker image inspect peakpilot:arm64 --format 'arch={{.Architecture}} size={{.Size}} bytes'

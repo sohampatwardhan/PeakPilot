@@ -1,0 +1,29 @@
+[package]
+name = "peakpilot-core"
+version = "0.1.0"
+edition = "2021"
+description = "PeakPilot building-load coordination engine — edge-deployable Rust core."
+license = "MIT"
+
+# The control path (model, scenarios, engine) is pure std. serde/serde_json are the only
+# non-std dependencies and are confined to the JSON I/O boundary, not the scheduling logic.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bin]]
+name = "peakpilot"
+path = "src/main.rs"
+
+[lib]
+name = "peakpilot_core"
+path = "src/lib.rs"
+
+[profile.release]
+# Small, fast static binary for edge targets.
+opt-level = 3
+lto = true
+strip = true
+
+[dev-dependencies]
+proptest = "1.12.0"

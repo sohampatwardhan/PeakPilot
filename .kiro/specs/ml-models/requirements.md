@@ -32,7 +32,8 @@ stays an optional cross-check off the judge's path.
 - R1.3 IF no grid limit is feasible, THEN the panel SHALL say so and SHALL NOT show a floor number.
 - R1.4 The "How close to optimal?" panel SHALL show the reactive floor beside the LP bound, with the headroom
   `floor − bound` in kW and %. This replaces the gap to the chosen limit as the headline number.
-- R1.5 The search SHALL be cached on the scenario inputs and SHALL finish in under 1 s for every named scenario.
+- R1.5 The search SHALL be cached on the scenario inputs and SHALL finish in under 1 s for every named scenario
+  (measured without coverage tracing, which slows the engine about 3×).
 
 ## R2 — Thermal calibration (`peakpilot/learn.py`, new)
 
@@ -94,7 +95,8 @@ stays an optional cross-check off the judge's path.
 1. Hot evening's panel shows reactive floor 7.8 kW, bound 6.03 kW, headroom 1.77 kW (≈ 23 %).
 2. EV offline shows 14.9 kW with the "not all higher limits are feasible" note.
 3. `fit_thermal` on the S1 telemetry (0.2 °C noise, 240 min) is within 1 % of the true `a` and `b`.
-4. The forecast control reproduces the S2 Part A table to ±0.01 kW.
+4. The forecast control reproduces the S2 Part A table to ±0.01 kW. The 0.5 kW noise row used the study's
+   second noise draw, so `learn.forecast_cost` (one draw per seed) matches it in direction only.
 5. `git diff main -- peakpilot/engine.py` is empty, and CI is green.
 
 ## Assumptions

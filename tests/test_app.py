@@ -49,11 +49,12 @@ def test_every_scenario_renders(scenario_name):
     at = _run(scenario_name)
     assert at.sidebar.selectbox[0].value == scenario_name
     assert at.title[0].value == "PeakPilot"
-    # 5 headline metrics + 3 in the "How close to optimal?" panel (every named
-    # scenario has a solvable benchmark).
-    assert len(at.metric) == 8
+    # 5 headline metrics + 3 in the "How close to optimal?" panel + 3 in its forecast
+    # expander (every named scenario has a solvable benchmark and forecast plan).
+    assert len(at.metric) == 11
     assert "How close to optimal? (SIMULATED)" in [s.value for s in at.subheader]
     assert any(m.label == "Lower bound on achievable peak (kW)" for m in at.metric)
+    assert any(m.label == "Reactive floor (kW)" for m in at.metric)
 
 
 def test_simulated_labels_present():
@@ -134,14 +135,73 @@ def test_energy_delta_is_neutral_when_tasks_match():
     assert "AC runtime" in energy.delta or energy.delta == "same as baseline"
 
 
+def _decision_log(at: AppTest):
+    return next(d.value for d in at.dataframe if "message" in d.value.columns)
+
+
+def _metric(at: AppTest, label: str):
+    return next(m for m in at.metric if m.label == label)
+
+
 def test_ac_cycling_hidden_by_default_and_toggle_restores_it():
     at = _run()
-    log = at.dataframe[0].value
+    log = _decision_log(at)
     assert not log["message"].str.startswith(("cooling ON", "cooling OFF")).any()
     hidden_rows = len(log)
 
-    at.toggle[0].set_value(True).run()
+    next(t for t in at.toggle if t.label.startswith("Show AC")).set_value(True).run()
     assert not at.exception
-    full = at.dataframe[0].value
+    full = _decision_log(at)
     assert full["message"].str.startswith(("cooling ON", "cooling OFF")).any()
     assert len(full) > hidden_rows
+
+
+# --- ML analysis panel (spec: .kiro/specs/ml-models, R1-R3) -----------------
+
+
+def test_reactive_floor_headlines_the_optimal_panel():
+    # Acceptance criterion 1: floor 7.8 kW, bound 6.03 kW, headroom 1.77 kW.
+    at = _run()
+    assert _metric(at, "Reactive floor (kW)").value == "7.8"
+    assert _metric(at, "Lower bound on achievable peak (kW)").value == "6.03"
+    assert _metric(at, "Headroom (kW)").value == "1.77"
+    assert "the fair comparison" in _all_text(at)
+
+
+def test_ev_offline_floor_is_flagged_not_monotone():
+    # Acceptance criterion 2.
+    at = _run("EV offline 18:00–18:45")
+    assert _metric(at, "Reactive floor (kW)").value == "14.9"
+    assert any("Not every limit above 14.9 kW works" in i.value for i in at.info)
+
+
+def test_forecast_controls_reproduce_the_cool_bias_failure():
+    at = _run()
+    assert _metric(at, "Realized peak (kW)").value == "6.03"
+    assert any("below the reactive floor" in s.value for s in at.success)
+    bias = next(s for s in at.select_slider if s.label.startswith("Outdoor forecast error"))
+    bias.set_value(-2.0).run()
+    assert not at.exception
+    assert _metric(at, "Min above comfort").value == "462"
+    assert any("breaks the comfort limit for 462 minutes" in w.value for w in at.warning)
+    assert "PeakPilot's control stays the reactive scheduler" in _all_text(at)
+
+
+def test_noisy_forecast_can_be_no_better_than_reacting():
+    at = _run()
+    noise = next(s for s in at.select_slider if s.label.startswith("Base-load forecast noise"))
+    noise.set_value(0.5).run()
+    assert not at.exception
+    assert float(_metric(at, "Realized peak (kW)").value) > 6.8
+
+
+def test_calibration_toggle_switches_the_room_model():
+    at = _run()
+    text = _all_text(at)
+    assert "Room model in use: default illustrative parameters." in text
+    assert "which is the 0.2 °C sensor noise itself" in text
+    at.sidebar.toggle[0].set_value(True).run()
+    assert not at.exception
+    assert "Room model in use: calibrated from SIMULATED telemetry" in _all_text(at)
+    # A near-exact fit leaves the headline comparison unchanged.
+    assert _metric(at, "Coordinated peak").value == "14.0 kW"

@@ -17,7 +17,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from peakpilot import engine, massgis, optimal, scenarios
+from peakpilot import engine, learn, massgis, optimal, scenarios
 
 st.set_page_config(page_title="PeakPilot", page_icon="⚡", layout="wide")
 
@@ -33,6 +33,31 @@ def _benchmark(scenario: engine.Scenario, _coordinated: engine.RunResult) -> opt
     scenario, so the same scenario always pairs with the same coordinated run.
     """
     return optimal.benchmark(scenario, _coordinated)
+
+
+@st.cache_data(hash_funcs={engine.Scenario: repr})
+def _calibration(scenario: engine.Scenario) -> tuple[learn.ThermalFit | None, str]:
+    """Room model fitted to SIMULATED thermostat telemetry from ``scenario``.
+
+    Returns ``(fit, "")``, or ``(None, reason)`` when the telemetry cannot be fitted.
+    """
+    try:
+        return learn.fit_thermal(*learn.simulated_telemetry(scenario)), ""
+    except ValueError as err:
+        return None, str(err)
+
+
+@st.cache_data(hash_funcs={engine.Scenario: repr, learn.ForecastError: repr})
+def _forecast_cost(scenario: engine.Scenario, error: learn.ForecastError) -> learn.ForecastCost:
+    """Cached open-loop plan-on-a-forecast result for one scenario and forecast error."""
+    return learn.forecast_cost(scenario, error)
+
+
+# Forecast-error choices (spec R3.2). Explicit option lists keep every value exact.
+_SCALES = [0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1, 1.15, 1.2]
+_SHIFTS = [-60, -45, -30, -15, 0, 15, 30, 45, 60]
+_NOISES = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+_BIASES = [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
 
 
 # Deadline choices in minutes from 16:00, every half hour from 17:00 to 08:00, so a
@@ -180,6 +205,13 @@ wh_deadline_min = st.sidebar.select_slider(
     value=_deadline_option(wh_spec.deadline_min), format_func=engine.clock,
 )
 
+st.sidebar.subheader("Room model")
+use_calibrated = st.sidebar.toggle(
+    "Use calibrated room model", value=False, key="use_calibrated",
+    help="Fit the room's thermal model to SIMULATED thermostat telemetry and run both "
+    "evenings on the fitted model. See \"Calibrate the room model\" below.",
+)
+
 st.sidebar.subheader("Massachusetts context")
 town = st.sidebar.selectbox("Town (MassGIS)", massgis.towns(), index=massgis.towns().index("Boston") if "Boston" in massgis.towns() else 0)
 
@@ -194,6 +226,18 @@ devices = scenarios.custom_scenario(
     ev_offline=ev_spec.offline_window,
 ).devices
 scenario = dataclasses.replace(base_scenario, name=chosen, power_limit_kw=power_limit, devices=devices)
+
+# Calibration fits telemetry from the default ("true") room model; the toggle then
+# swaps the fitted model in. Both runs always share the same model (same work).
+calibration, calibration_error = _calibration(scenario)
+if use_calibrated and calibration is not None:
+    scenario = dataclasses.replace(scenario, thermal=calibration.params)
+    room_model_label = (
+        f"calibrated from SIMULATED telemetry (R {calibration.params.r:.3f}, "
+        f"eta {calibration.params.eta:.3f})"
+    )
+else:
+    room_model_label = "default illustrative parameters"
 
 cmp = engine.compare(scenario)
 b, co = cmp.baseline, cmp.coordinated
@@ -264,6 +308,7 @@ st.plotly_chart(_demand_figure(cmp), use_container_width=True)
 
 st.subheader("Room temperature (SIMULATED, illustrative thermal model)")
 st.plotly_chart(_temp_figure(cmp), use_container_width=True)
+st.caption(f"Room model in use: {room_model_label}.")
 
 # Perfect-foresight benchmark — a separate panel, not part of the comparison above.
 bench = _benchmark(scenario, co)
@@ -284,13 +329,42 @@ with st.container(border=True):
     elif opt.status == "error":
         st.error(f"The benchmark solver did not finish: {opt.message} No number is shown.")
     else:
+        floor = bench.floor
+        lo, hi, step = floor.grid_kw
         m1, m2, m3 = st.columns(3)
-        m1.metric("Coordinated peak (kW)", f"{bench.coordinated_peak_kw:.2f}", help="PeakPilot's coordinated run (SIMULATED)")
+        m1.metric(
+            "Reactive floor (kW)", "none" if floor.limit_kw is None else f"{floor.limit_kw:.1f}",
+            help=f"Lowest power limit PeakPilot's scheduler holds with every deadline met, 0 minutes "
+            f"over the limit and the room within comfort. Searched from {lo:.0f} to {hi:.0f} kW "
+            f"in {step} kW steps.",
+        )
         m2.metric(
             "Lower bound on achievable peak (kW)", f"{opt.peak_kw:.2f}",
             help="No schedule can do the same work with a lower peak. A lower bound, not a schedule a device could necessarily follow.",
         )
-        m3.metric("Gap (kW)", f"{bench.gap_kw:.2f}", f"{bench.gap_pct:.1f}% of coordinated peak", delta_color="off")
+        if bench.headroom_kw is None:
+            m3.metric("Headroom (kW)", "—", help="Needs both a reactive floor and a bound.")
+        else:
+            m3.metric(
+                "Headroom (kW)", f"{bench.headroom_kw:.2f}",
+                help=f"How much lower than the reactive floor a planner with perfect foresight could "
+                f"go: {bench.headroom_pct:.0f}% of the floor.",
+            )
+            st.caption(
+                f"Perfect foresight could hold {bench.headroom_kw:.2f} kW ({bench.headroom_pct:.0f}%) "
+                f"below the lowest limit the reactive scheduler holds."
+            )
+        if floor.limit_kw is None:
+            st.warning(
+                f"No power limit from {lo:.0f} to {hi:.0f} kW lets the scheduler finish every task "
+                "with 0 minutes over the limit and the room within comfort, so no floor is shown."
+            )
+        elif not floor.monotone:
+            st.info(
+                f"Not every limit above {floor.limit_kw:.1f} kW works: in this scenario, raising the "
+                "limit can break feasibility again. The floor is the lowest limit that works, not a "
+                "threshold above which everything does."
+            )
         if not bench.limit_achievable:
             st.warning(
                 f"The {bench.power_limit_kw:.1f} kW limit cannot be met even with perfect "
@@ -302,9 +376,83 @@ with st.container(border=True):
                 "work from the benchmark. This comparison is not like-for-like."
             )
         st.caption(
-            "PeakPilot aims to stay under the limit you set, not to push the peak as low as "
-            "possible, so a large gap on an easy limit is expected."
+            f"At the {bench.power_limit_kw:.1f} kW limit you set, the coordinated run peaks at "
+            f"{bench.coordinated_peak_kw:.2f} kW, {bench.gap_kw:.2f} kW above the bound. PeakPilot "
+            "aims to stay under the limit you set, not to push the peak as low as possible, so "
+            "the reactive floor, not that gap, is the fair comparison."
         )
+
+        with st.expander("What if the forecast is wrong? (SIMULATED)"):
+            st.caption(
+                "A planner with a forecast instead of perfect foresight: the LP plans every device "
+                "on a wrong base-load or outdoor forecast, and the plan is played against the true "
+                "evening with no correction."
+            )
+            f1, f2 = st.columns(2)
+            scale = f1.select_slider("Base-load forecast scale", _SCALES, value=1.0, format_func=lambda s: f"{s:.0%}")
+            shift = f1.select_slider("Base-load timing error (min, + = late)", _SHIFTS, value=0)
+            noise = f2.select_slider("Base-load forecast noise (kW)", _NOISES, value=0.0)
+            bias = f2.select_slider("Outdoor forecast error (°C, − = too cool)", _BIASES, value=0.0)
+            cost = _forecast_cost(scenario, learn.ForecastError(scale, shift, noise, bias))
+            if cost.status != "optimal":
+                st.info("No plan exists on this forecast (the planning LP is infeasible).")
+            else:
+                n1, n2, n3 = st.columns(3)
+                n1.metric("Planned peak (kW)", f"{cost.planned_peak_kw:.2f}", help="What the plan expects on the forecast")
+                n2.metric(
+                    "Realized peak (kW)", f"{cost.realized_peak_kw:.2f}",
+                    help=f"True base load plus the planned device power; "
+                    f"{cost.realized_peak_kw - opt.peak_kw:+.2f} kW vs the perfect-foresight bound",
+                )
+                n3.metric("Min above comfort", f"{cost.comfort_violation_min}", help="Planned AC against the true outdoor temperature")
+                if cost.comfort_violation_min > 0:
+                    st.warning(
+                        f"This plan breaks the comfort limit for {cost.comfort_violation_min} minutes: "
+                        "a too-cool outdoor forecast under-plans cooling."
+                    )
+                elif floor.limit_kw is not None and cost.realized_peak_kw >= floor.limit_kw - 1e-6:
+                    st.warning(
+                        f"No better than reacting: the realized peak is at or above the "
+                        f"{floor.limit_kw:.1f} kW reactive floor."
+                    )
+                elif floor.limit_kw is not None:
+                    st.success(
+                        f"{floor.limit_kw - cost.realized_peak_kw:.2f} kW below the reactive floor "
+                        "with this forecast error."
+                    )
+            st.caption(
+                "Open-loop and SIMULATED. PeakPilot's control stays the reactive scheduler; this "
+                "shows what a forecast would have to be worth before planning could replace it."
+            )
+
+    with st.expander("Calibrate the room model (SIMULATED telemetry)"):
+        st.caption(
+            "Fits the room's thermal model to thermostat-style telemetry: the coordinated run's "
+            "room temperature with seeded 0.2 °C sensor noise, the outdoor temperature, and AC "
+            "power. A real building would supply measured telemetry instead. Output-error least "
+            "squares (SciPy), seeded by ordinary least squares."
+        )
+        if calibration is None:
+            st.warning(f"This telemetry cannot be fitted: {calibration_error}.")
+        else:
+            true = scenarios.custom_scenario().thermal
+            fitted = calibration.params
+            st.dataframe(
+                pd.DataFrame([
+                    {"Param": "R", "Default": true.r, "Fitted": round(fitted.r, 3)},
+                    {"Param": "eta", "Default": true.eta, "Fitted": round(fitted.eta, 3)},
+                    {"Param": "C (fixed)", "Default": true.c, "Fitted": fitted.c},
+                ]).assign(**{"Error %": lambda d: (100 * (d["Fitted"] / d["Default"] - 1)).round(1)}),
+                use_container_width=True, hide_index=True,
+            )
+            st.caption(
+                f"R in °C per kW, eta cooling effectiveness, C thermal capacitance. The fitted model "
+                f"tracks the noisy readings to {calibration.rmse_c:.3f} °C RMSE over the evening "
+                f"({calibration.ac_on_min} AC-on minutes), which is the 0.2 °C sensor noise itself. "
+                f"Temperature data pins down only R·C and eta/C, so C keeps its default. Turn on \"Use calibrated room model\" in the sidebar to run both evenings "
+                f"on the fitted model. In use now: {room_model_label}."
+            )
+
     with st.expander("Why this is a lower bound on achievable peak"):
         st.markdown("The benchmark relaxes rules the engine enforces:")
         st.markdown("\n".join(f"- {r}" for r in opt.relaxations))

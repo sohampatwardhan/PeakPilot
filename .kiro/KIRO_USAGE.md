@@ -36,7 +36,15 @@ They directly shaped the "honest infeasibility" banner and the SIMULATED labels.
   (`ModuleNotFoundError`) was diagnosed and fixed by adding `pyproject.toml` and an editable
   install — caught by Kiro running the tests, not guessed.
 
-## ML studies spec (`.kiro/specs/ml-models/`)
+## ML studies spec (`.kiro/specs/ml-models/`), built with Claude Code
+
+**Attribution:** this spec, its studies and its implementation (PRs #16–#18), the dashboard
+scenario fix (#21) and the submission docs were written by Claude Code (Anthropic), not by
+Kiro. Claude Code worked inside the structures Kiro had set up: Kiro's spec format
+(requirements → design → tasks), the steering docs, and the issue → spec → branch → PR
+workflow. It also read the earlier Kiro session logs for prior decisions. Kiro's hooks run
+only inside Kiro, so they did not run during this work. Everything else in this file
+describes Kiro.
 
 "Where could machine learning help, and is it measurable?" was answered with a spec before any
 production code:
@@ -55,7 +63,8 @@ production code:
   parameter range from clean data (derandomized, so CI is repeatable). Fixed-example tests pin
   the study numbers. A wall-clock test that failed only under coverage tracing was caught here
   and split into a timing check plus a grid-size check.
-- **Context7** was used to check the SciPy, Hypothesis and Streamlit 1.40.2 APIs before coding.
+- **Context7** (from Claude Code) was used to check the SciPy, Hypothesis and Streamlit 1.40.2
+  APIs before coding.
 
 ## What was deliberately NOT used, and why
 

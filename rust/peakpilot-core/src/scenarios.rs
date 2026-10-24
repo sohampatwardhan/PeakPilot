@@ -5,6 +5,7 @@
 //! limit, EV / water-heater energy and deadlines) while keeping the rest of a scenario.
 
 use crate::model::{DeviceKind, DeviceSpec, Scenario, ThermalParams, WINDOW_MINUTES};
+use crate::solar::{PVArray, Solar};
 
 /// EV deadline: 07:00, as minutes from 16:00.
 pub const EV_DEADLINE: u32 = 15 * 60;
@@ -24,6 +25,8 @@ pub struct ScenarioParams {
     pub peak_outdoor_c: f64,
     pub ev_offline: Option<(u32, u32)>,
     pub note: String,
+    /// Add the SIMULATED rooftop PV array (clear-sky irradiance, default `PVArray`).
+    pub solar: bool,
 }
 
 impl Default for ScenarioParams {
@@ -39,6 +42,7 @@ impl Default for ScenarioParams {
             peak_outdoor_c: 31.0,
             ev_offline: None,
             note: String::new(),
+            solar: false,
         }
     }
 }
@@ -95,6 +99,26 @@ pub fn outdoor_profile(peak_c: f64, low_c: f64) -> Vec<f64> {
         .collect()
 }
 
+/// Illustrative clear-sky plane-of-array irradiance in W/m² (Boston summer, 05:15–20:20).
+///
+/// SIMULATED: not measured weather data, never derived from MassGIS installed capacity.
+/// Same expression as the Python `clear_sky_irradiance()` defaults.
+pub fn clear_sky_irradiance() -> Vec<f64> {
+    let (peak_w_m2, sunrise_h, sunset_h) = (950.0_f64, 5.25_f64, 20.33_f64);
+    (0..WINDOW_MINUTES)
+        .map(|m| {
+            let hour = hour_of(m) % 24.0;
+            let frac = (hour - sunrise_h) / (sunset_h - sunrise_h);
+            let g = if 0.0 < frac && frac < 1.0 {
+                peak_w_m2 * (std::f64::consts::PI * frac).sin().powf(1.3)
+            } else {
+                0.0
+            };
+            round4(g)
+        })
+        .collect()
+}
+
 fn devices(p: &ScenarioParams) -> Vec<DeviceSpec> {
     vec![
         DeviceSpec {
@@ -140,6 +164,10 @@ pub fn build(p: &ScenarioParams) -> Scenario {
         outdoor_c: outdoor_profile(p.peak_outdoor_c, 19.0),
         thermal: ThermalParams::default(),
         note: p.note.clone(),
+        solar: p.solar.then(|| Solar {
+            irradiance_w_m2: clear_sky_irradiance(),
+            array: PVArray::default(),
+        }),
     }
 }
 
@@ -195,6 +223,21 @@ pub fn infeasible_params() -> ScenarioParams {
     }
 }
 
+/// The tight 11 kW case plus a SIMULATED ~6 kW rooftop PV array with MPPT.
+pub fn sunny_evening_params() -> ScenarioParams {
+    ScenarioParams {
+        name: "Sunny evening + rooftop PV (11 kW)".to_string(),
+        power_limit_kw: 11.0,
+        solar: true,
+        note: "The tight 11 kW case with a SIMULATED ~6 kW rooftop PV array. Its inverter \
+               tracks the maximum power point (perturb and observe). PV offsets demand until \
+               sunset and again after sunrise, so the limit applies to net grid import. \
+               Irradiance is an illustrative clear-sky curve, not measured data."
+            .to_string(),
+        ..ScenarioParams::default()
+    }
+}
+
 pub fn hot_evening() -> Scenario {
     build(&hot_evening_params())
 }
@@ -211,8 +254,12 @@ pub fn infeasible() -> Scenario {
     build(&infeasible_params())
 }
 
+pub fn sunny_evening() -> Scenario {
+    build(&sunny_evening_params())
+}
+
 /// All named scenarios, in the same order as the Python dashboard registry.
-pub fn all() -> [NamedScenario; 4] {
+pub fn all() -> [NamedScenario; 5] {
     [
         NamedScenario {
             slug: "hot_evening",
@@ -233,6 +280,11 @@ pub fn all() -> [NamedScenario; 4] {
             slug: "infeasible",
             display_name: "Infeasible (8 kW, early EV deadline)",
             params: infeasible_params,
+        },
+        NamedScenario {
+            slug: "sunny_evening",
+            display_name: "Sunny evening + rooftop PV (11 kW)",
+            params: sunny_evening_params,
         },
     ]
 }

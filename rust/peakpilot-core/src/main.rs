@@ -51,7 +51,10 @@ fn dispatch(args: &[String]) -> Result<(), String> {
     }
 }
 
-fn take_value<'a>(it: &mut impl Iterator<Item = &'a String>, flag: &str) -> Result<&'a str, String> {
+fn take_value<'a>(
+    it: &mut impl Iterator<Item = &'a String>,
+    flag: &str,
+) -> Result<&'a str, String> {
     it.next()
         .map(String::as_str)
         .ok_or_else(|| format!("{flag} needs a value"))
@@ -93,11 +96,21 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
             "--scenario" => slug = Some(take_value(&mut it, arg)?),
             "--table" => table = true,
             "--pretty" => pretty = true,
-            "--limit" => limit = Some(parse_f64(take_value(&mut it, arg)?, arg, f64::MIN_POSITIVE)?),
+            "--limit" => {
+                limit = Some(parse_f64(
+                    take_value(&mut it, arg)?,
+                    arg,
+                    f64::MIN_POSITIVE,
+                )?)
+            }
             "--ev-kwh" => ev_kwh = Some(parse_f64(take_value(&mut it, arg)?, arg, 0.0)?),
-            "--ev-deadline-min" => ev_deadline = Some(parse_minutes(take_value(&mut it, arg)?, arg)?),
+            "--ev-deadline-min" => {
+                ev_deadline = Some(parse_minutes(take_value(&mut it, arg)?, arg)?)
+            }
             "--wh-kwh" => wh_kwh = Some(parse_f64(take_value(&mut it, arg)?, arg, 0.0)?),
-            "--wh-deadline-min" => wh_deadline = Some(parse_minutes(take_value(&mut it, arg)?, arg)?),
+            "--wh-deadline-min" => {
+                wh_deadline = Some(parse_minutes(take_value(&mut it, arg)?, arg)?)
+            }
             other => return Err(format!("unknown option '{other}'")),
         }
     }
@@ -134,12 +147,39 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
 fn print_table(c: &CompareResult) {
     let (b, p) = (&c.baseline, &c.coordinated);
     let met = |all: bool| if all { "all met" } else { "UNMET" };
-    println!("{} — power limit {:.1} kW (SIMULATED)", c.scenario_name, c.power_limit_kw);
+    println!(
+        "{} — power limit {:.1} kW (SIMULATED)",
+        c.scenario_name, c.power_limit_kw
+    );
     println!("{:<26}{:>16}{:>16}", "", "Uncoordinated", "PeakPilot");
-    println!("{:<26}{:>16.2}{:>16.2}", "Peak demand (kW)", b.peak_kw, p.peak_kw);
-    println!("{:<26}{:>16.2}{:>16.2}", "Energy delivered (kWh)", b.total_kwh, p.total_kwh);
-    println!("{:<26}{:>16}{:>16}", "Minutes over limit", b.minutes_over_limit, p.minutes_over_limit);
-    println!("{:<26}{:>16}{:>16}", "Minutes above comfort", b.temp_violation_min, p.temp_violation_min);
-    println!("{:<26}{:>16}{:>16}", "Deadlines", met(b.all_tasks_met()), met(p.all_tasks_met()));
+    println!(
+        "{:<26}{:>16.2}{:>16.2}",
+        "Peak demand (kW)", b.peak_kw, p.peak_kw
+    );
+    println!(
+        "{:<26}{:>16.2}{:>16.2}",
+        "Energy delivered (kWh)", b.total_kwh, p.total_kwh
+    );
+    println!(
+        "{:<26}{:>16}{:>16}",
+        "Minutes over limit", b.minutes_over_limit, p.minutes_over_limit
+    );
+    println!(
+        "{:<26}{:>16}{:>16}",
+        "Minutes above comfort", b.temp_violation_min, p.temp_violation_min
+    );
+    println!(
+        "{:<26}{:>16}{:>16}",
+        "Deadlines",
+        met(b.all_tasks_met()),
+        met(p.all_tasks_met())
+    );
     println!("Peak reduction: {:.1}%", c.peak_reduction_pct());
+    if let Some(s) = &c.solar {
+        println!(
+            "Rooftop PV (SIMULATED): {:.1} kWh, MPPT tracking efficiency {:.2}%; demand is net grid import",
+            s.pv_kwh,
+            100.0 * s.tracking_efficiency
+        );
+    }
 }

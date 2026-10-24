@@ -104,3 +104,37 @@ def test_lp_bound_uses_net_load():
     with_pv = optimal.solve(scenarios.sunny_evening()).peak_kw
     without = optimal.solve(scenarios.tight_limit()).peak_kw
     assert with_pv <= without + 1e-6
+
+
+# --- Study S4 reproduction (issue #35) -----------------------------------------
+
+
+@pytest.fixture(scope="module")
+def s4(repo_root):
+    import json
+
+    return json.loads((repo_root / "studies" / "results" / "s4_solar_mppt.json").read_text())
+
+
+def test_reproduces_study_s4_tracker(s4):
+    sc = scenarios.sunny_evening()
+    sol = engine.simulate_solar(sc)
+    assert sol.tracking_efficiency == pytest.approx(s4["part_a"]["default"]["tracking_efficiency"], abs=1e-12)
+    assert sol.pv_kwh == pytest.approx(s4["part_a"]["default"]["pv_kwh"], abs=1e-9)
+    for row in s4["part_a"]["sweep"]:
+        arr = dataclasses.replace(sc.solar.array, mppt_step_v=row["step_v"], mppt_iterations=row["iterations"])
+        got = engine.simulate_solar(dataclasses.replace(sc, solar=Solar(sc.solar.irradiance_w_m2, arr)))
+        assert got.tracking_efficiency == pytest.approx(row["tracking_efficiency"], abs=1e-12), row
+    assert s4["part_a"]["scipy_mpp_max_rel_diff"] < 1e-9
+
+
+def test_reproduces_study_s4_value_to_peak(s4):
+    # The default array (scale 1.0) and no PV: same work, lower floor and LP bound with PV.
+    rows = {r["scale"]: r for r in s4["part_b"]["rows"]}
+    sunny = scenarios.sunny_evening()
+    for scale, sc in ((0.0, dataclasses.replace(sunny, solar=None)), (1.0, sunny)):
+        assert optimal.reactive_floor(sc).limit_kw == rows[scale]["reactive_floor_kw"]
+        assert optimal.solve(sc).peak_kw == pytest.approx(rows[scale]["lp_bound_kw"], abs=1e-6)
+    assert rows[1.0]["reactive_floor_kw"] < rows[0.0]["reactive_floor_kw"]
+    assert all(r["task_kwh"] == pytest.approx(rows[0.0]["task_kwh"]) for r in rows.values())
+    assert all(r["coordinated_all_met"] for r in rows.values())

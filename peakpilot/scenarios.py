@@ -9,7 +9,6 @@ power limit and the EV / water-heater energy and deadlines from the UI.
 
 from __future__ import annotations
 
-import dataclasses
 import math
 
 from .engine import (
@@ -123,8 +122,13 @@ def custom_scenario(
     peak_outdoor_c: float = 31.0,
     ev_offline: tuple[int, int] | None = None,
     note: str = "",
+    solar: bool = False,
 ) -> Scenario:
-    """Build a scenario from dashboard-adjustable parameters (SIMULATED)."""
+    """Build a scenario from dashboard-adjustable parameters (SIMULATED).
+
+    ``solar=True`` adds the SIMULATED rooftop PV array (clear-sky irradiance, default
+    :class:`~peakpilot.engine.PVArray`).
+    """
     return Scenario(
         name=name,
         power_limit_kw=power_limit_kw,
@@ -133,6 +137,7 @@ def custom_scenario(
         outdoor_c=_outdoor_profile(peak_c=peak_outdoor_c),
         thermal=ThermalParams(),
         note=note,
+        solar=Solar(irradiance_w_m2=clear_sky_irradiance()) if solar else None,
     )
 
 
@@ -193,10 +198,10 @@ def infeasible() -> Scenario:
 
 def sunny_evening() -> Scenario:
     """The tight 11 kW case plus a SIMULATED ~6 kW rooftop PV array with MPPT."""
-    return dataclasses.replace(
-        tight_limit(),
+    return custom_scenario(
         name="Sunny evening + rooftop PV (11 kW)",
-        solar=Solar(irradiance_w_m2=clear_sky_irradiance()),
+        power_limit_kw=11.0,
+        solar=True,
         note="The tight 11 kW case with a SIMULATED ~6 kW rooftop PV array. Its inverter "
         "tracks the maximum power point (perturb and observe). PV offsets demand until "
         "sunset and again after sunrise, so the limit applies to net grid import. "

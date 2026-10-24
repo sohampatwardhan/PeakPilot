@@ -22,19 +22,23 @@ fn arb_params() -> impl Strategy<Value = ScenarioParams> {
         60u32..=960,
         25.0f64..36.0,
         proptest::option::of((0u32..900, 1u32..=120)),
+        proptest::bool::ANY,
     )
         .prop_map(
-            |(limit, ev_kwh, ev_deadline, wh_kwh, wh_deadline, peak_c, outage)| ScenarioParams {
-                name: "generated".to_string(),
-                power_limit_kw: limit,
-                ev_kwh,
-                ev_deadline_min: ev_deadline,
-                wh_kwh,
-                wh_deadline_min: wh_deadline,
-                peak_outdoor_c: peak_c,
-                ev_offline: outage
-                    .map(|(start, len)| (start, (start + len).min(WINDOW_MINUTES as u32))),
-                note: String::new(),
+            |(limit, ev_kwh, ev_deadline, wh_kwh, wh_deadline, peak_c, outage, solar)| {
+                ScenarioParams {
+                    name: "generated".to_string(),
+                    power_limit_kw: limit,
+                    ev_kwh,
+                    ev_deadline_min: ev_deadline,
+                    wh_kwh,
+                    wh_deadline_min: wh_deadline,
+                    peak_outdoor_c: peak_c,
+                    ev_offline: outage
+                        .map(|(start, len)| (start, (start + len).min(WINDOW_MINUTES as u32))),
+                    note: String::new(),
+                    solar,
+                }
             },
         )
 }
@@ -53,13 +57,20 @@ fn check_run(s: &Scenario, r: &RunResult) -> Result<(), TestCaseError> {
     prop_assert_eq!(r.room_c.len(), n);
 
     for spec in &s.devices {
-        let kw = r.per_device_kw.get(&spec.id).expect("a series for every device");
+        let kw = r
+            .per_device_kw
+            .get(&spec.id)
+            .expect("a series for every device");
         prop_assert_eq!(kw.len(), n);
         for (m, &p) in kw.iter().enumerate() {
             prop_assert!(
                 (0.0..=spec.max_kw + 1e-9).contains(&p),
                 "{} ({}): {} kW at minute {} is outside 0..={} kW",
-                spec.id, r.label, p, m, spec.max_kw
+                spec.id,
+                r.label,
+                p,
+                m,
+                spec.max_kw
             );
         }
 
@@ -69,14 +80,20 @@ fn check_run(s: &Scenario, r: &RunResult) -> Result<(), TestCaseError> {
         prop_assert!(
             (delivered - integral).abs() <= 1e-9 * (1.0 + delivered),
             "{} ({}): delivered {} kWh but its power series integrates to {} kWh",
-            spec.id, r.label, delivered, integral
+            spec.id,
+            r.label,
+            delivered,
+            integral
         );
 
         if let Some(target) = spec.target_kwh {
             prop_assert!(
                 delivered <= target + 1e-6,
                 "{} ({}): delivered {} kWh, more than the {} kWh asked for",
-                spec.id, r.label, delivered, target
+                spec.id,
+                r.label,
+                delivered,
+                target
             );
             // Honest deadlines: only energy drawn before the deadline counts.
             let deadline = spec.deadline_min.expect("energy tasks have a deadline") as usize;
@@ -86,29 +103,41 @@ fn check_run(s: &Scenario, r: &RunResult) -> Result<(), TestCaseError> {
                 met,
                 shortfall <= 1e-6,
                 "{} ({}): tasks_met={} but {:.3} kWh was still owed at the deadline (minute {})",
-                spec.id, r.label, met, shortfall, deadline
+                spec.id,
+                r.label,
+                met,
+                shortfall,
+                deadline
             );
             let unmet = *r.unmet_kwh.get(&spec.id).unwrap();
             prop_assert!(
                 (unmet - shortfall).abs() <= 1e-9,
                 "{} ({}): unmet_kwh={} but the shortfall at the deadline is {}",
-                spec.id, r.label, unmet, shortfall
+                spec.id,
+                r.label,
+                unmet,
+                shortfall
             );
         }
     }
 
-    // The reported building total is base load plus what the devices actually drew.
-    for m in 0..n {
+    // The reported building total is base load, net of on-site PV, plus what the devices
+    // actually drew.
+    let pv = engine::pv_kw_series(s);
+    for (m, &pv_m) in pv.iter().enumerate().take(n) {
         let drawn: f64 = s
             .devices
             .iter()
             .map(|d| r.per_device_kw.get(&d.id).unwrap()[m])
             .sum();
-        let expected = s.base_load[m] + drawn;
+        let expected = s.base_load[m] - pv_m + drawn;
         prop_assert!(
             (r.total_kw[m] - expected).abs() <= 1e-6,
-            "{}: total {} kW at minute {} but base + devices = {} kW",
-            r.label, r.total_kw[m], m, expected
+            "{}: total {} kW at minute {} but base - PV + devices = {} kW",
+            r.label,
+            r.total_kw[m],
+            m,
+            expected
         );
     }
 

@@ -1,4 +1,4 @@
-# PeakPilot — demo script (target 2:35, hard cap 3:00)
+# PeakPilot — demo script (target 2:42, hard cap 3:00)
 
 Spoken script for the submission video: six intro slides, the live dashboard, then the
 closing slide. Times are cumulative, at about 150 spoken words per minute, with a few
@@ -10,9 +10,9 @@ hidden backup (detailed results the live demo already shows).
 
 | Part | Time | What it covers |
 | --- | --- | --- |
-| Intro slides 1–6 | 0:00–1:01 | Problem, approach, who benefits, how Kiro was used |
-| Live demo | 1:03–2:23 | The project working: result, log, optimality, honesty, MassGIS |
-| Closing slide 7 | 2:25–2:34 | Limits, repo, thanks |
+| Intro slides 1–6 | 0:00–1:09 | Problem, approach, who benefits, how Kiro was used |
+| Live demo | 1:11–2:31 | The project working: result, log, optimality, honesty, MassGIS |
+| Closing slide 7 | 2:33–2:42 | Limits, repo, thanks |
 
 ---
 
@@ -40,13 +40,18 @@ rule, acts, and logs why in plain language."
 
 **[0:38–0:49] Slide 5 · Who benefits**
 
-"That could let building owners add EV chargers and heat pumps under the limit they
-already have, and give the grid load that moves out of the peak."
+"That could let building owners add EV chargers and other flexible loads under the limit
+they already have, and give the grid load that moves out of the peak."
 
-**[0:49–1:01] Slide 6 · How Kiro built it**
+**[0:49–1:09] Slide 6 · How Kiro built it**
 
-"It was built spec-first in Kiro: specs, steering docs that hold the honesty rules,
-agent hooks, MCP to check the live app, and property tests that found two real bugs."
+This slide carries the Kiro judging criterion, so it gets 20 seconds. Name each card
+heading as you say it.
+
+"It was built spec-first in Kiro. Specs split each feature into requirements, design and
+tasks. Steering docs hold the honesty rules. Agent hooks guard commands and check
+diagrams. Through MCP, Kiro tested the live app in a browser. And property tests found
+two real bugs."
 
 *Cut to the running dashboard (about 2 s).*
 
@@ -76,39 +81,39 @@ each item below once, in this order. Each one backs a judging criterion.
    MassGIS, with source and date, kept apart from the simulation. (Unique public
    dataset)
 7. *(Optional, about +12 s)* **Sunny evening + rooftop PV.** Simulated PV with MPPT
-   lowers net grid import: 17.2 → 11.0 kW, 0 minutes over the 11 kW limit. Total stays
-   under 2:50.
+   lowers net grid import: 17.2 → 11.0 kW, 0 minutes over the 11 kW limit. This brings the
+   total to about 2:54, so skip it if your cut runs long.
 
 ### Narration
 
-**[1:03–1:12] Setup**
+**[1:11–1:20] Setup**
 
 "Here's the live dashboard. All device data is simulated and labeled. Hot evening,
 14-kilowatt limit."
 
-**[1:12–1:28] The headline result**
+**[1:20–1:36] The headline result**
 
 "Same evening, run twice. Uncoordinated, in red, it peaks at 19 kilowatts and sits over
 the limit for three hours. PeakPilot, in green, holds 14: a 26% lower peak, zero minutes
 over, every deadline met, and the EV and water heater get exactly the same energy."
 
-**[1:28–1:35] Why, in plain language**
+**[1:36–1:43] Why, in plain language**
 
 "Every decision is logged, and the room stays under 25 degrees."
 
-**[1:35–1:55] How close to optimal?**
+**[1:43–2:03] How close to optimal?**
 
 "How good is that? A perfect-foresight linear program puts the lowest possible peak at
 about 6 kilowatts; PeakPilot can hold 7.8. But a forecast just 2 degrees too cool breaks
 comfort for nearly eight hours, so control stays reactive."
 
-**[1:55–2:12] Honesty: offline + infeasible**
+**[2:03–2:20] Honesty: offline + infeasible**
 
 "If the EV charger drops offline, PeakPilot reserves its last power and says so. And
 this 8-kilowatt case is impossible: it reports the minutes over the limit instead of
 hiding them."
 
-**[2:12–2:23] Massachusetts context**
+**[2:20–2:31] Massachusetts context**
 
 "Pick a town to see its utility and landfill renewable projects from MassGIS, public
 facts kept apart from the simulation."
@@ -122,7 +127,7 @@ power point, the same building holds an 11-kilowatt limit."
 
 ## Part 3 — Closing slide
 
-**[2:25–2:34] Slide 7 · Honest limits, and what's next**
+**[2:33–2:42] Slide 7 · Honest limits, and what's next**
 
 "Everything simulated is labeled, and no cost or carbon savings are claimed. The code,
 specs, steering and hooks are on GitHub. Thanks."

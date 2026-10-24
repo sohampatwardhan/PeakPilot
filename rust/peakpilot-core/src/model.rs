@@ -4,6 +4,8 @@
 //! kWh (`*_kwh`), temperature in °C (`*_c`), and time in minutes from the window start
 //! (minute 0 == 16:00). Every value produced from this model is SIMULATED.
 
+use crate::solar::{Solar, SolarResult};
+
 /// Window start as minutes past midnight (16:00).
 pub const START_MINUTE: u32 = 16 * 60;
 
@@ -156,6 +158,9 @@ pub struct Scenario {
     pub outdoor_c: Vec<f64>,
     pub thermal: ThermalParams,
     pub note: String,
+    /// Optional on-site PV. When present, both runs subtract the same PV series, so every
+    /// demand figure describes net grid import (it can go negative: export).
+    pub solar: Option<Solar>,
 }
 
 /// Insertion-ordered map keyed by device id.
@@ -252,6 +257,7 @@ pub struct CompareResult {
     pub baseline: RunResult,
     pub coordinated: RunResult,
     pub comfort_c: f64,
+    pub solar: Option<SolarResult>,
 }
 
 impl CompareResult {

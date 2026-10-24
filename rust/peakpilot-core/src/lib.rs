@@ -14,9 +14,11 @@ pub mod engine;
 pub mod json;
 pub mod model;
 pub mod scenarios;
+pub mod solar;
 
 pub use engine::{compare, py_sum, run_baseline, run_coordinated};
 pub use model::{
-    clock, CompareResult, DecisionEntry, DeviceKind, DeviceMap, DeviceSpec, DeviceState,
-    RunResult, Scenario, ThermalParams, START_MINUTE, WINDOW_MINUTES,
+    clock, CompareResult, DecisionEntry, DeviceKind, DeviceMap, DeviceSpec, DeviceState, RunResult,
+    Scenario, ThermalParams, START_MINUTE, WINDOW_MINUTES,
 };
+pub use solar::{PVArray, Solar, SolarResult};

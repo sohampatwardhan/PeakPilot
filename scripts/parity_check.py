@@ -50,6 +50,10 @@ NAMED = {
             "ev_deadline_min": 420,
         },
     ),
+    "sunny_evening": (
+        scenarios.sunny_evening,
+        {"name": "Sunny evening + rooftop PV (11 kW)", "power_limit_kw": 11.0, "solar": True},
+    ),
 }
 
 FLAGS = {

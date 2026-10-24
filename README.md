@@ -182,7 +182,8 @@ reverses when power falls. The engine checks the tracker against the true maximu
 PV offsets demand, so the scheduler holds **net grid import** (base load + devices − PV)
 under the limit. Both runs get the same PV. Scenarios without solar are unchanged. The
 irradiance is not measured weather data and is never inferred from MassGIS installed capacity,
-and no cost or emissions claims follow from it. The Rust port does not model PV yet.
+and no cost or emissions claims follow from it. The Rust engine ports the same PV and MPPT
+model, and the parity check covers this scenario.
 
 ## How close to optimal?
 
@@ -222,7 +223,12 @@ Two SciPy models in `peakpilot/learn.py` sit beside the scheduler, never in plac
   1.0–1.7 kW; 0.5 kW of noise erases the gain, and a forecast 2 °C too cool breaks comfort for
   462 minutes. That is why PeakPilot's control stays reactive.
 
-The research behind both, including a MATLAB R2026b cross-check that matches SciPy to ~1e-8,
+- **What is rooftop PV worth?** Study S4 finds the MPPT tracker captures 99.97 % of the
+  true-MPP energy. PV lowers the scheduler's reactive floor from 7.8 to 7.3 kW, then stops,
+  because the binding minutes come after sunset. The LP bound keeps falling, so PV makes
+  forecast-aware scheduling more valuable.
+
+The research behind these, including a MATLAB R2026b cross-check that matches SciPy to ~1e-8,
 is in `studies/` (`ml_studies.ipynb`). It runs on a development machine
 only: the app does not import it, and judges do not need MATLAB.
 
@@ -297,9 +303,9 @@ single static binary for a Raspberry Pi 4 or 5 (64-bit Raspberry Pi OS). It has 
 collector and needs no runtime on the device. The scheduling code uses only Rust's standard
 library; `serde` is used only to write JSON.
 
-The Python engine is the reference. CI runs both engines on every named scenario plus 100
-seeded random variations and compares the full JSON output: every per-minute value, every
-metric, every decision-log line. They currently match exactly on all 104 cases. Getting
+The Python engine is the reference. CI runs both engines on every named scenario (including
+rooftop PV with MPPT) plus 125 seeded random variations and compares the full JSON output: every per-minute value, every
+metric, every decision-log line. They currently match exactly on all 130 cases. Getting
 identical numbers required reproducing Python's compensated float `sum()` in Rust.
 
 ```mermaid
@@ -308,7 +314,7 @@ config:
   layout: elk
 ---
 flowchart LR
-    PY["Python engine\n(reference)"] --> PAR{"parity check:\n104 cases,\nidentical JSON?"}
+    PY["Python engine\n(reference)"] --> PAR{"parity check:\n130 cases,\nidentical JSON?"}
     RS["Rust engine\n(peakpilot-core)"] --> PAR
     RS --> BIN["static arm64 binary\nin a 0.8 MB image"]
     BIN --> PI["Raspberry Pi 4 / 5"]
@@ -350,8 +356,9 @@ run on either.
 - **Property-based tests** (`proptest`, 256 generated scenarios per property) check that
   power stays within each device's rating, delivered energy equals the integral of the
   power series, deadlines count only energy delivered before them, the building total
-  equals base load plus device draw, and identical inputs give identical results.
-- **Scenario tests** mirror the Python suite on the four named scenarios.
+  equals base load minus PV plus device draw, and identical inputs give identical results.
+- **Scenario tests** mirror the Python suite on the five named scenarios, including PV bounds and
+  net-load accounting. The property tests randomly switch rooftop PV on and off.
 
 The property tests found two bugs that also existed in the Python engine; both are fixed
 in both engines:

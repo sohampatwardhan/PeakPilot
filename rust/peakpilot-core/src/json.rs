@@ -7,6 +7,7 @@
 use serde::ser::{Serialize, Serializer};
 
 use crate::model::{clock, CompareResult, DecisionEntry, DeviceMap, RunResult};
+use crate::solar::SolarResult;
 
 /// Device maps serialize as JSON objects in insertion order (ev-1, wh-1, ac-1).
 impl<T: Serialize> Serialize for DeviceMap<T> {
@@ -74,6 +75,31 @@ impl<'a> From<&'a RunResult> for RunJson<'a> {
 }
 
 #[derive(serde::Serialize)]
+struct SolarJson<'a> {
+    irradiance_w_m2: &'a [f64],
+    cell_c: &'a [f64],
+    mppt_v: &'a [f64],
+    pv_kw: &'a [f64],
+    mpp_kw: &'a [f64],
+    pv_kwh: f64,
+    tracking_efficiency: f64,
+}
+
+impl<'a> From<&'a SolarResult> for SolarJson<'a> {
+    fn from(s: &'a SolarResult) -> Self {
+        SolarJson {
+            irradiance_w_m2: &s.irradiance_w_m2,
+            cell_c: &s.cell_c,
+            mppt_v: &s.mppt_v,
+            pv_kw: &s.pv_kw,
+            mpp_kw: &s.mpp_kw,
+            pv_kwh: s.pv_kwh,
+            tracking_efficiency: s.tracking_efficiency,
+        }
+    }
+}
+
+#[derive(serde::Serialize)]
 struct CompareJson<'a> {
     scenario_name: &'a str,
     power_limit_kw: f64,
@@ -81,6 +107,9 @@ struct CompareJson<'a> {
     peak_reduction_pct: f64,
     baseline: RunJson<'a>,
     coordinated: RunJson<'a>,
+    // Only scenarios with solar carry the key, matching the Python `to_json_dict()`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    solar: Option<SolarJson<'a>>,
 }
 
 /// Serialize a comparison to JSON (compact, or pretty-printed when `pretty` is true).
@@ -92,6 +121,7 @@ pub fn to_json_string(result: &CompareResult, pretty: bool) -> serde_json::Resul
         peak_reduction_pct: result.peak_reduction_pct(),
         baseline: RunJson::from(&result.baseline),
         coordinated: RunJson::from(&result.coordinated),
+        solar: result.solar.as_ref().map(SolarJson::from),
     };
     if pretty {
         serde_json::to_string_pretty(&view)

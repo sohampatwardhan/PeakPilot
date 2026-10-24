@@ -15,6 +15,7 @@ use crate::model::{
     CompareResult, DecisionEntry, DeviceKind, DeviceMap, DeviceState, RunResult, Scenario,
     ThermalParams, WINDOW_MINUTES,
 };
+use crate::solar::{simulate_solar, SolarResult};
 
 /// Sum floats exactly as CPython >= 3.12's built-in `sum()` does.
 ///
@@ -39,6 +40,22 @@ pub fn py_sum<I: IntoIterator<Item = f64>>(values: I) -> f64 {
         sum += compensation;
     }
     sum
+}
+
+/// PV output for `scenario`, or `None` when it has no on-site solar.
+pub fn scenario_solar(scenario: &Scenario) -> Option<SolarResult> {
+    scenario
+        .solar
+        .as_ref()
+        .map(|s| simulate_solar(s, &scenario.outdoor_c))
+}
+
+/// PV AC output in kW for every minute (all zeros when the scenario has no solar).
+pub fn pv_kw_series(scenario: &Scenario) -> Vec<f64> {
+    match scenario_solar(scenario) {
+        Some(s) => s.pv_kw,
+        None => vec![0.0; WINDOW_MINUTES],
+    }
 }
 
 /// Python's two-argument `min(a, b)`: returns `a` unless `b < a`.
@@ -76,7 +93,12 @@ fn slack_of(s: &DeviceState, now: u32) -> i64 {
 }
 
 fn new_states(scenario: &Scenario) -> Vec<DeviceState> {
-    scenario.devices.iter().cloned().map(DeviceState::new).collect()
+    scenario
+        .devices
+        .iter()
+        .cloned()
+        .map(DeviceState::new)
+        .collect()
 }
 
 fn log(entries: &mut Vec<DecisionEntry>, minute: u32, device: &str, message: impl Into<String>) {
@@ -257,8 +279,9 @@ pub fn run_baseline(scenario: &Scenario) -> RunResult {
     let mut series = Series::new(states.len());
     let mut decisions = Vec::new();
     let mut room_c = scenario.thermal.start_c;
+    let pv = pv_kw_series(scenario);
 
-    for step in 0..WINDOW_MINUTES {
+    for (step, &pv_now) in pv.iter().enumerate() {
         let m = step as u32;
         let mut cooling_kw = 0.0;
 
@@ -280,7 +303,11 @@ pub fn run_baseline(scenario: &Scenario) -> RunResult {
 
             let power = if s.spec.kind == DeviceKind::AirConditioner {
                 let want_on = room_c >= scenario.thermal.comfort_c || s.run_remaining_min > 0;
-                let p = if want_on && online { s.spec.max_kw } else { 0.0 };
+                let p = if want_on && online {
+                    s.spec.max_kw
+                } else {
+                    0.0
+                };
                 if p > 0.0 && s.power_kw == 0.0 {
                     s.run_remaining_min = s.spec.min_run_min;
                 }
@@ -300,11 +327,17 @@ pub fn run_baseline(scenario: &Scenario) -> RunResult {
             series.per_device_kw[i].push(power);
         }
 
-        let step_total = py_sum(states.iter().map(|s| s.power_kw)) + scenario.base_load[step];
+        let step_total =
+            py_sum(states.iter().map(|s| s.power_kw)) + scenario.base_load[step] - pv_now;
         series.minutes.push(m);
         series.total_kw.push(step_total);
         series.room_c.push(room_c);
-        room_c = step_room_temp(room_c, scenario.outdoor_c[step], cooling_kw, &scenario.thermal);
+        room_c = step_room_temp(
+            room_c,
+            scenario.outdoor_c[step],
+            cooling_kw,
+            &scenario.thermal,
+        );
     }
 
     finalize("Uncoordinated", scenario, series, &states, decisions)
@@ -323,6 +356,7 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
     let mut decisions = Vec::new();
     let thermal = &scenario.thermal;
     let mut room_c = thermal.start_c;
+    let pv = pv_kw_series(scenario);
     let ac_idx = states
         .iter()
         .position(|s| s.spec.kind == DeviceKind::AirConditioner);
@@ -347,7 +381,7 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
 
     for step in 0..WINDOW_MINUTES {
         let m = step as u32;
-        let mut committed = scenario.base_load[step];
+        let mut committed = scenario.base_load[step] - pv[step]; // net of on-site PV
         let mut cooling_kw = 0.0;
 
         // Refresh online state and disclose offline transitions.
@@ -470,11 +504,10 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
                 // On/off device: start only if the limit holds for the whole minimum run,
                 // using the worst base load in that window plus a full AC reservation.
                 let end = (step + s.spec.min_run_min as usize).min(WINDOW_MINUTES);
-                let worst_base = scenario.base_load[step..end.max(step + 1)]
-                    .iter()
-                    .copied()
+                let worst_base = (step..end.max(step + 1))
+                    .map(|t| scenario.base_load[t] - pv[t])
                     .reduce(|best, v| if v > best { v } else { best })
-                    .unwrap_or(scenario.base_load[step]);
+                    .unwrap_or(scenario.base_load[step] - pv[step]);
                 let forecast_floor = worst_base + ac_reserve_kw + s.spec.max_kw;
                 let fits_now = headroom >= s.spec.max_kw - 1e-9;
                 let fits_run = forecast_floor <= limit + 1e-9;
@@ -484,7 +517,11 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
                     py_min(s.spec.max_kw, s.remaining_kwh() * 60.0)
                 } else {
                     // Too tight to guarantee the whole run; wait for a quieter window.
-                    cause[i] = Some(if fits_run { Cause::WaitNow } else { Cause::WaitRun });
+                    cause[i] = Some(if fits_run {
+                        Cause::WaitNow
+                    } else {
+                        Cause::WaitRun
+                    });
                     0.0
                 }
             } else {
@@ -524,12 +561,18 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
         // Report what the building actually drew, not the controller's reservation.
         series
             .total_kw
-            .push(py_sum(states.iter().map(|s| s.power_kw)) + scenario.base_load[step]);
+            .push(py_sum(states.iter().map(|s| s.power_kw)) + scenario.base_load[step] - pv[step]);
         series.room_c.push(room_c);
         room_c = step_room_temp(room_c, scenario.outdoor_c[step], cooling_kw, thermal);
     }
 
-    finalize("PeakPilot coordinated", scenario, series, &states, decisions)
+    finalize(
+        "PeakPilot coordinated",
+        scenario,
+        series,
+        &states,
+        decisions,
+    )
 }
 
 /// Run baseline and coordinated simulations for `scenario` and compare them.
@@ -540,6 +583,7 @@ pub fn compare(scenario: &Scenario) -> CompareResult {
         baseline: run_baseline(scenario),
         coordinated: run_coordinated(scenario),
         comfort_c: scenario.thermal.comfort_c,
+        solar: scenario_solar(scenario),
     }
 }
 

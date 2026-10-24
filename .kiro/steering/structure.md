@@ -26,7 +26,8 @@ PeakPilot/
     s1_thermal_id.py      # S1: room-model calibration
     s2_forecast_value.py  # S2: what a wrong forecast costs a planner
     s3_matlab_parity.m    # S3: optional MATLAB cross-check
-    results/              # saved study outputs read by tests/test_learn.py
+    s4_solar_mppt.py      # S4: MPPT tracking and what rooftop PV is worth to the peak
+    results/              # saved study outputs read by tests/test_learn.py and tests/test_solar.py
   .kiro/
     specs/peakpilot/      # requirements.md, design.md, tasks.md (spec planning)
     specs/ml-models/      # ML spec (requirements, design, tasks); its evidence is in studies/

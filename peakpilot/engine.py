@@ -23,6 +23,7 @@ or controls real electrical equipment.
 
 from __future__ import annotations
 
+import functools
 import math
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -113,6 +114,73 @@ class DeviceState:
         return max(0.0, self.spec.target_kwh - self.delivered_kwh)
 
 
+# --- On-site solar (SIMULATED) ---------------------------------------------
+
+
+@dataclass(frozen=True)
+class PVArray:
+    """Simulated rooftop PV array and inverter (illustrative, not a real installation).
+
+    The array is one equivalent string on the ideal single-diode curve
+    ``I(V) = Isc * (1 - exp((V - Voc) / a))``: ``Isc`` scales with irradiance, and
+    ``Isc``, ``Voc`` and the diode voltage ``a`` shift with cell temperature. At
+    standard test conditions (1000 W/m², 25 °C cells) it makes about 5.8 kW DC.
+
+    The inverter tracks the maximum power point with perturb and observe: each minute
+    it nudges the array voltage by ``mppt_step_v`` ``mppt_iterations`` times, reversing
+    whenever power falls. AC output is DC power times ``inverter_eff``, capped at
+    ``inverter_kw``.
+    """
+
+    isc_stc_a: float = 18.0  # short-circuit current at STC, A
+    voc_stc_v: float = 400.0  # open-circuit voltage at STC, V
+    a_stc_v: float = 20.0  # diode voltage n*Ns*kT/q at 25 °C, V
+    alpha_isc: float = 0.0005  # Isc temperature coefficient, per °C
+    beta_voc: float = -0.003  # Voc temperature coefficient, per °C
+    noct_c: float = 45.0  # nominal operating cell temperature, °C
+    inverter_kw: float = 6.0  # AC rating, kW
+    inverter_eff: float = 0.96
+    mppt_step_v: float = 2.0  # perturbation size, V
+    mppt_iterations: int = 20  # perturbations per one-minute step
+
+
+@dataclass(frozen=True)
+class Solar:
+    """On-site solar input: plane-of-array irradiance (W/m², one value per minute)."""
+
+    irradiance_w_m2: tuple[float, ...]  # length WINDOW_MINUTES
+    array: PVArray = PVArray()
+
+
+@dataclass(frozen=True)
+class SolarResult:
+    """PV output for one scenario (SIMULATED). Both runs use this same series.
+
+    ``pv_kw`` is what the MPPT inverter delivers; ``mpp_kw`` is the AC output an ideal
+    tracker would reach at the true maximum power point. ``tracking_efficiency`` is
+    tracked ÷ true-MPP DC energy over sunlit minutes (1.0 when there is no sun).
+    """
+
+    irradiance_w_m2: tuple[float, ...]
+    cell_c: tuple[float, ...]
+    mppt_v: tuple[float, ...]
+    pv_kw: tuple[float, ...]
+    mpp_kw: tuple[float, ...]
+    pv_kwh: float
+    tracking_efficiency: float
+
+    def to_json_dict(self) -> dict:
+        return {
+            "irradiance_w_m2": list(self.irradiance_w_m2),
+            "cell_c": list(self.cell_c),
+            "mppt_v": list(self.mppt_v),
+            "pv_kw": list(self.pv_kw),
+            "mpp_kw": list(self.mpp_kw),
+            "pv_kwh": self.pv_kwh,
+            "tracking_efficiency": self.tracking_efficiency,
+        }
+
+
 # --- Scenario ---------------------------------------------------------------
 
 
@@ -149,6 +217,9 @@ class Scenario:
     outdoor_c: tuple[float, ...]  # length WINDOW_MINUTES, °C
     thermal: ThermalParams = ThermalParams()
     note: str = ""
+    # Optional on-site PV. When present, both runs subtract the same PV series, so
+    # every demand figure describes net grid import (it can go negative: export).
+    solar: Solar | None = None
 
 
 # --- Results ----------------------------------------------------------------
@@ -198,6 +269,7 @@ class CompareResult:
     baseline: RunResult
     coordinated: RunResult
     comfort_c: float
+    solar: SolarResult | None = None
 
     @property
     def peak_reduction_pct(self) -> float:
@@ -227,7 +299,7 @@ class CompareResult:
                 "decision_log": [d.as_row() for d in r.decision_log],
             }
 
-        return {
+        out = {
             "scenario_name": self.scenario_name,
             "power_limit_kw": self.power_limit_kw,
             "comfort_c": self.comfort_c,
@@ -235,6 +307,11 @@ class CompareResult:
             "baseline": run(self.baseline),
             "coordinated": run(self.coordinated),
         }
+        # Only scenarios with solar carry the key, so no-solar output (and Rust parity)
+        # is unchanged.
+        if self.solar is not None:
+            out["solar"] = self.solar.to_json_dict()
+        return out
 
 
 # --- Thermal step -----------------------------------------------------------
@@ -246,6 +323,101 @@ def _step_room_temp(room_c: float, outdoor_c: float, cooling_kw: float, p: Therm
     heat_gain = (outdoor_c - room_c) / p.r  # kW flowing in from outside
     net = heat_gain - cooling_kw * p.eta
     return room_c + (net / p.c) * dt * 60.0  # scaled so dynamics are visible per minute
+
+
+# --- PV array and MPPT -----------------------------------------------------
+
+
+def _pv_curve(g_w_m2: float, cell_c: float, a: PVArray) -> tuple[float, float, float]:
+    """Return ``(isc_a, voc_v, diode_v)`` for the array at this irradiance and cell temp."""
+    diode_v = a.a_stc_v * (cell_c + 273.15) / 298.15
+    isc = a.isc_stc_a * (g_w_m2 / 1000.0) * (1.0 + a.alpha_isc * (cell_c - 25.0))
+    voc = a.voc_stc_v * (1.0 + a.beta_voc * (cell_c - 25.0)) + diode_v * math.log(g_w_m2 / 1000.0)
+    return isc, max(0.0, voc), diode_v
+
+
+def _pv_power_w(v: float, isc: float, voc: float, diode_v: float) -> float:
+    """DC power in W at array voltage ``v`` on the ideal single-diode curve."""
+    if v <= 0.0 or v >= voc:
+        return 0.0
+    return v * isc * (1.0 - math.exp((v - voc) / diode_v))
+
+
+def _true_mpp_w(isc: float, voc: float, diode_v: float) -> float:
+    """Maximum DC power in W, by golden-section search (P(V) is unimodal on [0, Voc])."""
+    lo, hi = 0.0, voc
+    inv_phi = (math.sqrt(5.0) - 1.0) / 2.0
+    for _ in range(80):
+        x1 = hi - inv_phi * (hi - lo)
+        x2 = lo + inv_phi * (hi - lo)
+        if _pv_power_w(x1, isc, voc, diode_v) < _pv_power_w(x2, isc, voc, diode_v):
+            lo = x1
+        else:
+            hi = x2
+    return _pv_power_w((lo + hi) / 2.0, isc, voc, diode_v)
+
+
+@functools.lru_cache(maxsize=32)
+def _simulate_solar(solar: Solar, outdoor_c: tuple[float, ...]) -> SolarResult:
+    a = solar.array
+    v = 0.8 * a.voc_stc_v  # tracker's starting operating voltage
+    direction = 1.0
+    cells: list[float] = []
+    volts: list[float] = []
+    pv_kw: list[float] = []
+    mpp_kw: list[float] = []
+    tracked_dc = ideal_dc = 0.0
+    cap_w = a.inverter_kw * 1000.0
+    for m in range(WINDOW_MINUTES):
+        g = solar.irradiance_w_m2[m]
+        cell = outdoor_c[m] + (a.noct_c - 20.0) / 800.0 * max(0.0, g)
+        cells.append(cell)
+        if g <= 0.0:
+            # Night: no output; the tracker keeps its voltage for the next sunrise.
+            volts.append(v)
+            pv_kw.append(0.0)
+            mpp_kw.append(0.0)
+            continue
+        isc, voc, diode_v = _pv_curve(g, cell, a)
+        v = min(max(v, 0.0), voc)
+        p = _pv_power_w(v, isc, voc, diode_v)
+        for _ in range(a.mppt_iterations):
+            v_next = min(max(v + direction * a.mppt_step_v, 0.0), voc)
+            p_next = _pv_power_w(v_next, isc, voc, diode_v)
+            if p_next < p:
+                direction = -direction
+            v, p = v_next, p_next
+        ideal = _true_mpp_w(isc, voc, diode_v)
+        tracked_dc += p
+        ideal_dc += ideal
+        volts.append(v)
+        pv_kw.append(min(cap_w, p * a.inverter_eff) / 1000.0)
+        mpp_kw.append(min(cap_w, ideal * a.inverter_eff) / 1000.0)
+    return SolarResult(
+        irradiance_w_m2=tuple(solar.irradiance_w_m2),
+        cell_c=tuple(cells),
+        mppt_v=tuple(volts),
+        pv_kw=tuple(pv_kw),
+        mpp_kw=tuple(mpp_kw),
+        pv_kwh=sum(pv_kw) / 60.0,
+        tracking_efficiency=tracked_dc / ideal_dc if ideal_dc > 0 else 1.0,
+    )
+
+
+def simulate_solar(scenario: Scenario) -> SolarResult | None:
+    """PV output for ``scenario`` via the MPPT inverter, or ``None`` without solar.
+
+    Deterministic and cached on the solar inputs and outdoor temperature.
+    """
+    if scenario.solar is None:
+        return None
+    return _simulate_solar(scenario.solar, scenario.outdoor_c)
+
+
+def pv_kw_series(scenario: Scenario) -> tuple[float, ...]:
+    """PV AC output in kW for every minute (all zeros when the scenario has no solar)."""
+    solar = simulate_solar(scenario)
+    return solar.pv_kw if solar is not None else (0.0,) * WINDOW_MINUTES
 
 
 # --- Core simulation --------------------------------------------------------
@@ -390,6 +562,7 @@ def run_baseline(scenario: Scenario) -> RunResult:
     room_series: list[float] = []
     log: list[DecisionEntry] = []
     room_c = scenario.thermal.start_c
+    pv = pv_kw_series(scenario)
 
     for m in range(WINDOW_MINUTES):
         cooling_kw = 0.0
@@ -423,7 +596,7 @@ def run_baseline(scenario: Scenario) -> RunResult:
                 s.run_remaining_min -= 1
             per_device_kw[sid].append(power)
 
-        step_total = sum(s.power_kw for s in states.values()) + scenario.base_load[m]
+        step_total = sum(s.power_kw for s in states.values()) + scenario.base_load[m] - pv[m]
         minutes.append(m)
         total_kw.append(step_total)
         room_series.append(room_c)
@@ -436,7 +609,7 @@ def run_coordinated(scenario: Scenario) -> RunResult:
     """Coordinated run: deterministic least-slack-first scheduler under the limit.
 
     Each minute the scheduler: reserves headroom for the uncontrollable base load
-    and any offline device (assumed to hold its last commanded power); gives the AC
+    (net of on-site PV, when the scenario has solar) and any offline device (assumed to hold its last commanded power); gives the AC
     priority when the room nears the comfort limit; then allocates the remaining
     headroom to energy tasks in ascending slack order. A task whose slack has run
     out runs at full power even if that breaches the limit, and the breach is
@@ -455,6 +628,7 @@ def run_coordinated(scenario: Scenario) -> RunResult:
     room_c = scenario.thermal.start_c
     thermal = scenario.thermal
     ac_spec = _ac_spec(scenario)
+    pv = pv_kw_series(scenario)
     task_kinds = (DeviceKind.EV, DeviceKind.WATER_HEATER)
     # Last logged control state per energy task; a task with nothing to do starts done.
     task_state: dict[str, str] = {
@@ -471,7 +645,7 @@ def run_coordinated(scenario: Scenario) -> RunResult:
 
     for m in range(WINDOW_MINUTES):
         limit = scenario.power_limit_kw
-        committed = scenario.base_load[m]
+        committed = scenario.base_load[m] - pv[m]  # net of on-site PV
         cooling_kw = 0.0
 
         # Refresh online state and disclose offline transitions.
@@ -571,7 +745,7 @@ def run_coordinated(scenario: Scenario) -> RunResult:
                     # min-run window; also keep room for anything already committed now.
                     ac_reserve = ac_spec.max_kw if ac_spec is not None else 0.0
                     worst_base = max(
-                        scenario.base_load[t]
+                        scenario.base_load[t] - pv[t]
                         for t in range(m, min(m + spec.min_run_min, WINDOW_MINUTES))
                     )
                     # Headroom that must exist for every minute of the run.
@@ -617,7 +791,7 @@ def run_coordinated(scenario: Scenario) -> RunResult:
         minutes.append(m)
         # Report what the building actually drew. `committed` is the controller's plan,
         # which can include headroom reserved for an offline device that has stopped.
-        total_kw.append(sum(s.power_kw for s in states.values()) + scenario.base_load[m])
+        total_kw.append(sum(s.power_kw for s in states.values()) + scenario.base_load[m] - pv[m])
         room_series.append(room_c)
         room_c = _step_room_temp(room_c, scenario.outdoor_c[m], cooling_kw, thermal)
 
@@ -634,4 +808,5 @@ def compare(scenario: Scenario) -> CompareResult:
         baseline=baseline,
         coordinated=coordinated,
         comfort_c=scenario.thermal.comfort_c,
+        solar=simulate_solar(scenario),
     )

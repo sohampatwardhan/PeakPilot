@@ -34,7 +34,7 @@ tech.md, structure.md). If this file and steering ever disagree, steering wins.
 
 ```
 app.py                 Streamlit dashboard (thin view over the engine)
-peakpilot/engine.py    simulation + least-slack-first scheduler (stdlib only)
+peakpilot/engine.py    simulation + least-slack-first scheduler + PV/MPPT model (stdlib only)
 peakpilot/scenarios.py named reproducible scenarios + Scenario builder
 peakpilot/massgis.py   loads bundled MassGIS CSVs (no runtime network)
 peakpilot/optimal.py   perfect-foresight LP peak benchmark (SciPy; lower bound) + reactive floor
@@ -42,6 +42,7 @@ peakpilot/learn.py     room-model calibration + forecast-error cost (SciPy; anal
 data/                  bundled MassGIS CSVs + DATA.md provenance
 tests/                 pytest suite (engine, scenarios, MassGIS, dashboard smoke)
 tests/test_optimal.py  LP benchmark properties (bound, energy, comfort, reproducibility)
+tests/test_solar.py    rooftop PV + MPPT bounds and net-load accounting
 tests/test_learn.py    Hypothesis property tests + study reproduction for learn.py
 .kiro/specs/peakpilot/ requirements.md, design.md, tasks.md
 .kiro/specs/ml-models/ ML spec (requirements, design, tasks)

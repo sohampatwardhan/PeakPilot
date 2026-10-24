@@ -18,8 +18,8 @@ EXPECTED_DEVICES = {
 }
 
 
-def test_registry_lists_four_named_scenarios(scenario_registry):
-    assert len(scenario_registry) == 4
+def test_registry_lists_five_named_scenarios(scenario_registry):
+    assert len(scenario_registry) == 5
     assert all(callable(builder) for builder in scenario_registry.values())
 
 
@@ -27,7 +27,7 @@ def test_registry_returns_a_copy():
     """Mutating the returned dict must not change the dashboard's registry."""
     reg = scenarios.scenarios()
     reg.clear()
-    assert len(scenarios.scenarios()) == 4
+    assert len(scenarios.scenarios()) == 5
 
 
 def test_profiles_span_the_window(named_scenario):

@@ -36,6 +36,7 @@ pytest -q --cov
 | `tests/test_massgis.py` | bundled CSVs load offline, counts and dates match `data/DATA.md` |
 | `tests/test_app.py` | headless dashboard smoke test (Streamlit `AppTest`) for every scenario, including the SIMULATED and MassGIS source labels |
 | `tests/test_optimal.py` | LP benchmark properties (bound, energy, comfort, reproducibility) and the reactive floor |
+| `tests/test_solar.py` | rooftop PV + MPPT: never above the true MPP or inverter rating, zero at night, net-load accounting, no-solar output unchanged |
 | `tests/test_learn.py` | Hypothesis property tests for room-model calibration; reproduces the ML study results |
 
 CI fails if coverage of `peakpilot/` drops below 90%. With only `pip install pytest`,
@@ -168,6 +169,21 @@ sequenceDiagram
     C->>C: resume normal control, log reconnect
 ```
 
+## Rooftop solar with MPPT
+
+The **Sunny evening + rooftop PV (11 kW)** scenario adds a SIMULATED ~6 kW rooftop array to
+the tight 11 kW case. The array follows an ideal single-diode I-V curve driven by an
+illustrative clear-sky irradiance profile (Boston summer, sunrise 05:15, sunset 20:20) and a
+NOCT cell-temperature model. Each minute the inverter runs a perturb-and-observe maximum
+power point tracker (MPPT): it nudges the array voltage, keeps going while power rises, and
+reverses when power falls. The engine checks the tracker against the true maximum power point
+(golden-section search) and reports the tracking efficiency.
+
+PV offsets demand, so the scheduler holds **net grid import** (base load + devices − PV)
+under the limit. Both runs get the same PV. Scenarios without solar are unchanged. The
+irradiance is not measured weather data and is never inferred from MassGIS installed capacity,
+and no cost or emissions claims follow from it. The Rust port does not model PV yet.
+
 ## How close to optimal?
 
 A separate dashboard panel compares the coordinated peak with the lowest peak any schedule
@@ -267,6 +283,9 @@ And deliberately excludes:
   building. Reported landfill capacity (MW) is **not** generation.
 - **No cost or carbon savings are claimed.** Reducing a peak does not by itself reduce total
   energy or emissions, and we have no data to support such claims.
+- **Rooftop PV is illustrative.** The irradiance curve is clear-sky and synthetic, the array
+  is an ideal single-diode model, and the MPPT is a textbook perturb-and-observe loop. It is a
+  demonstration of net-load coordination, not a production forecast.
 - **Offline handling is an explicit assumption:** an offline device is assumed to hold its
   last commanded power, and that assumption is disclosed in the decision log.
 
@@ -348,7 +367,7 @@ in both engines:
 
 ```
 app.py                  Streamlit dashboard (thin view over the engine)
-peakpilot/engine.py     simulation + least-slack-first scheduler (stdlib only)
+peakpilot/engine.py     simulation + least-slack-first scheduler + PV/MPPT model (stdlib only)
 peakpilot/scenarios.py  named reproducible scenarios
 peakpilot/massgis.py    bundled MassGIS loader (no runtime network)
 peakpilot/optimal.py    perfect-foresight LP peak benchmark + reactive floor (SciPy)

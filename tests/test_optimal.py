@@ -52,8 +52,9 @@ def test_power_limits_and_peak(solved):
     for d in scenario.devices:
         assert all(-1e-9 <= kw <= d.max_kw + 1e-9 for kw in bench.optimal.per_device_kw[d.id])
     assert bench.optimal.peak_kw == pytest.approx(max(bench.optimal.total_kw), abs=1e-6)
+    pv = engine.pv_kw_series(scenario)
     for t, total in enumerate(bench.optimal.total_kw):
-        expected = scenario.base_load[t] + sum(s[t] for s in bench.optimal.per_device_kw.values())
+        expected = scenario.base_load[t] - pv[t] + sum(s[t] for s in bench.optimal.per_device_kw.values())
         assert total == pytest.approx(expected, abs=1e-9)
 
 

@@ -69,6 +69,9 @@ stays an optional cross-check off the judge's path.
 - R4.3 product.md SHALL list calibration and forecast sensitivity under In. "ML-based control" SHALL stay under Out.
 - R4.4 tech.md and structure.md SHALL allow SciPy in `optimal.py` and `learn.py` only. CI's third-party guard on
   `engine.py` SHALL be unchanged.
+- R4.5 This feature SHALL add nothing to the Raspberry Pi image (`rust/peakpilot-core`, built from that folder only).
+  That image simulates what runs on the Pi. The studies, the notebook, `learn.py`, SciPy and MATLAB stay on the
+  development machine and in the dashboard.
 
 ## R5 — MATLAB cross-check
 
@@ -104,4 +107,5 @@ stays an optional cross-check off the judge's path.
 ## Out of scope
 
 Learned or forecast-driven control (MPC, RL), CSV upload of real telemetry (next step after this spec), MATLAB at
-runtime, Compiler SDK packaging, neural networks, and cost or carbon figures.
+runtime, Compiler SDK packaging, neural networks, cost or carbon figures, and any change to the Raspberry Pi
+image or the Rust engine.

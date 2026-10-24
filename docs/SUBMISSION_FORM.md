@@ -1,8 +1,8 @@
 # PeakPilot — submission form text (paste-ready)
 
-Drafted from what is in the repository on `main`. Items marked **[confirm]** could not
-be verified from the repo; check or edit them before pasting. Nothing here is submitted
-automatically.
+Drafted from what is in the repository on `main`. The Kiro section follows Kiro's own
+account of the build, checked against git history. The video URL is the only blank left.
+Nothing here is submitted automatically.
 
 ## Team members
 
@@ -62,37 +62,95 @@ edge deployment.
 
 ## How Kiro was used
 
-The full write-up is in `.kiro/KIRO_USAGE.md`. A short version for the form follows.
+The full write-up is in `.kiro/KIRO_USAGE.md`. The text below is paste-ready for the form.
+It credits only Kiro: the ML studies, rooftop PV/MPPT and these docs came from Claude Code,
+which the Additional info field and `KIRO_USAGE.md` say.
 
-**Credit only what Kiro did.** The ML spec (`.kiro/specs/ml-models/`), its studies and
-implementation (PRs #16–#18), the dashboard fix (#21) and these submission docs were written
-by Claude Code, not Kiro. `KIRO_USAGE.md` says so. The judges score Kiro usage, so leave that
-work out of the Kiro answer or name the tool that did it.
+**Surfaces.** Most of the build happened in the **Kiro IDE**. One dashboard UI review ran as
+a **Kiro CLI** agent session.
 
-- **Tools:** **[confirm]** Kiro IDE, Kiro CLI and Kiro Crew. Local Kiro session logs exist
-  for all three; say how they differed in your own words.
-- **Spec-driven development:** Kiro specs under `.kiro/specs/`: `peakpilot`,
-  `optimal-benchmark`, `rust-engine` and `test-framework`. Each has requirements, design and
-  tasks, and tasks trace to requirements. Kiro also wrote `.kiro/steering/workflow.md`, the
-  issue → spec → branch → PR process used for every change. **[confirm]** which of these
-  specs Kiro wrote and which it only executed.
-- **Steering:** four always-on docs. `product.md` holds the honesty rules: SIMULATED
-  labels, MassGIS kept separate, no cost/carbon claims, report infeasibility, same work
-  both runs. `tech.md` keeps the engine stdlib-only and says where SciPy may be used.
-  `structure.md` covers layout and boundaries. `workflow.md` covers the change process.
-- **Agent hooks:** five Kiro hooks in `.kiro/hooks/`. **[confirm]** that Kiro created each one.
-  Git records who committed each file, not which tool wrote it, and the cleanup hook was
-  committed by Claude Code in #23 from a file already in your checkout.
-  - a Context7 docs reminder before library-specific work;
-  - a guard that asks before destructive commands;
-  - Mermaid layout and render validation;
-  - a "Mermaid where appropriate" hook;
-  - a Stop hook that removes worktrees once their branch merges.
-- **MCP:** chrome-devtools (Kiro opened the running dashboard at an 858 px viewport, read
-  the accessibility tree and checked the console; that review led to issue #13 and PR #14)
-  and GitHub (issues and PRs). **[confirm]** whether Kiro itself called Context7, beyond
-  the reminder hook.
-- **Property-based testing:** Rust proptest runs 256-case engine properties in CI, and CI
-  also checks Rust/Python output parity. **[confirm]** that Kiro wrote these. The Python
-  Hypothesis tests in `tests/test_learn.py` came from Claude Code.
-- **Kiro Powers:** **[confirm]** fill in if you used any; otherwise leave this bullet out.
+**Spec-driven development.** Kiro wrote four specs under `.kiro/specs/`, each with
+requirements, design and tasks:
+- `peakpilot`: core engine and dashboard
+- `rust-engine`: Raspberry Pi port
+- `test-framework`
+- `optimal-benchmark`: LP lower bound
+
+Every task traces back to a numbered requirement. The scheduler's correctness properties in
+the design docs became tests. Kiro also wrote `.kiro/steering/workflow.md`, the issue → spec
+→ branch → PR process every change followed.
+
+We also used specs to check finished work, not only to plan it:
+- **Task run with sub-agents.** Kiro's "run all tasks" mode gave each `peakpilot` task its
+  own sub-agent, which checked the task against the code. Task 1.4 failed because the
+  decision log repeated the same entries every minute (issue #25). A sub-agent fixed it in a
+  git worktree, in both the Python and Rust engines (PR #27). Scheduling output stayed
+  byte-identical.
+- **Goal workflow.** A follow-up goal workflow checked tasks 1.5–3.6. It found that offline
+  devices were not shown as OFFLINE in the status panel (#26, fixed in PR #28), then
+  recorded the verified status of each task (PR #29).
+
+**Multi-agent workflows.** One Kiro workflow run built the whole optimal-benchmark feature.
+Each step ran in its own agent session:
+1. Set up a git worktree.
+2. Open issue #9.
+3. Write the spec.
+4. Implement.
+5. Review.
+6. Open and merge PR #12.
+
+The review step checked the new panel in a browser on three scenarios. It saved screenshots
+and a verification report under `.agents/tasks/`.
+
+**Steering docs.** Four always-on steering files held the project's non-negotiables, so they
+applied to every edit without anyone having to remember them:
+- `product.md`: the honesty rules (label SIMULATED, keep MassGIS facts separate, no
+  cost/carbon claims, report infeasibility, same work in both runs). These shaped the
+  infeasibility banner and the SIMULATED labels.
+- `tech.md`: the engine stays pure standard library, results are deterministic, units are
+  fixed, and SciPy is allowed in only two modules.
+- `structure.md`: repository layout and boundaries.
+- `workflow.md`: how changes land.
+
+**Agent hooks.** Kiro created all five hooks in `.kiro/hooks/`:
+- A `UserPromptSubmit` hook that tells the agent to check current library docs in Context7
+  before writing library code.
+- A `PreToolUse` guard that asks before destructive shell commands (`rm`,
+  `git reset --hard`, force push, overwriting redirects). It was tested against 18 sample
+  commands.
+- Two `PostFileSave` hooks for Mermaid. One sets the ELK layout and render-checks each
+  diagram with mermaid-cli. The other adds a diagram where it clearly helps. This is why the
+  README and design docs have working architecture and sequence diagrams.
+- A `Stop` hook that removes worktrees under `.worktrees/` once their branch is merged. It
+  never forces: it uses `git branch -d` and skips dirty worktrees. It keeps the worktrees
+  that workflows create from piling up.
+
+**MCP servers and Powers.**
+- **chrome-devtools:** Before the first PR, Kiro opened the running Streamlit dashboard in a
+  real browser, read the accessibility tree, confirmed zero console errors and took
+  screenshots. Later, a Kiro CLI session reviewed the UI at an 858 px viewport. It found
+  deadline sliders that showed raw hours (17–32) and noisy AC entries in the log. It opened
+  issue #13 and fixed both in PR #14 (clock-time deadlines, AC cycling hidden in the log, a
+  neutral energy delta, kW units).
+- **GitHub:** Kiro created the tracking issues, opened PRs and merged them without leaving
+  the editor.
+- **Context7 MCP:** For the Rust port, Kiro checked the current proptest, serde, Docker and
+  GitHub Actions docs before writing code.
+- **Context7 Power:** We installed the Context7 Power and used it through Kiro Powers to
+  check Streamlit APIs, such as the replacement for the deprecated `use_container_width` and
+  how `st.select_slider` formats values.
+
+**Testing.**
+- Kiro ran pytest inside the loop. It caught a CI failure (`ModuleNotFoundError`) and fixed
+  it by adding `pyproject.toml` and an editable install.
+- The `test-framework` spec added shared fixtures, a coverage gate, scenario and MassGIS
+  tests, and a dashboard smoke test (PR #11).
+- For the Rust port, Kiro wrote property-based tests (`proptest`, 256 generated scenarios per
+  property). It also added a CI parity check that compares full JSON output from both
+  engines: 104 of 104 runs identical when built (4 named scenarios plus 100 seeded
+  variations), and 130 of 130 today after a fifth scenario was added.
+
+The property tests found two real bugs that existed in both engines, and both are now fixed
+in both:
+1. A task counted as "met" even when its energy arrived after its own deadline.
+2. An offline device kept drawing power after it reached its target.

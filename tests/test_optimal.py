@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
+import time
+
 import pytest
 
 from peakpilot import engine, optimal, scenarios
@@ -103,3 +106,87 @@ def test_result_is_labeled_lower_bound():
     result = optimal.solve(scenarios.hot_evening())
     assert result.is_lower_bound
     assert result.relaxations == optimal.RELAXATIONS and result.relaxations
+
+
+# --- Reactive floor (spec: .kiro/specs/ml-models, R1) -----------------------
+
+
+@pytest.mark.parametrize(
+    ("builder", "limit_kw", "monotone"),
+    [
+        (scenarios.hot_evening, 7.8, True),
+        (scenarios.tight_limit, 7.8, True),
+        # The engine holds the EV's last power through its outage, so only 14.9-15.4 kW
+        # and >= 19.0 kW hold every constraint: feasibility is not monotone in the limit.
+        (scenarios.ev_offline, 14.9, False),
+        (scenarios.infeasible, 11.7, True),
+    ],
+)
+def test_reactive_floor_on_named_scenarios(builder, limit_kw, monotone):
+    floor = optimal.reactive_floor(builder())
+    assert floor.limit_kw == limit_kw
+    assert floor.monotone is monotone
+    assert floor.peak_kw <= floor.limit_kw + 1e-9
+    assert floor.grid_kw[0] == 5.0 and floor.grid_kw[2] == 0.1
+
+
+def test_reactive_floor_limit_really_holds():
+    scenario = scenarios.hot_evening()
+    floor = optimal.reactive_floor(scenario)
+    at_floor = engine.run_coordinated(dataclasses.replace(scenario, power_limit_kw=floor.limit_kw))
+    below = engine.run_coordinated(dataclasses.replace(scenario, power_limit_kw=floor.limit_kw - 0.1))
+    assert at_floor.minutes_over_limit == 0 and at_floor.all_tasks_met() and at_floor.temp_violation_min == 0
+    assert below.minutes_over_limit > 0 or not below.all_tasks_met() or below.temp_violation_min > 0
+
+
+def test_reactive_floor_none_when_no_limit_works():
+    # Unreachable EV deadline: no limit lets the scheduler finish the work.
+    floor = optimal.reactive_floor(scenarios.custom_scenario(ev_kwh=60, ev_deadline_min=60))
+    assert floor.limit_kw is None and floor.peak_kw is None and floor.monotone is False
+
+
+def test_reactive_floor_rejects_bad_step():
+    with pytest.raises(ValueError):
+        optimal.reactive_floor(scenarios.hot_evening(), step_kw=0)
+
+
+def _coverage_active() -> bool:
+    try:
+        import coverage
+    except ImportError:
+        return False
+    return coverage.Coverage.current() is not None
+
+
+def test_reactive_floor_grid_is_bounded():
+    # R1.5's cost driver: one engine run per grid point, at most ~151 for named scenarios.
+    for builder in scenarios.scenarios().values():
+        start, stop, step = optimal.reactive_floor(builder()).grid_kw
+        assert round((stop - start) / step) + 1 <= 151
+
+
+@pytest.mark.skipif(_coverage_active(), reason="branch tracing slows the engine ~3x; timing is checked without --cov")
+def test_reactive_floor_is_fast():
+    # R1.5: under 1 s for every named scenario (the dashboard caches it too).
+    for builder in scenarios.scenarios().values():
+        t0 = time.perf_counter()
+        optimal.reactive_floor(builder())
+        assert time.perf_counter() - t0 < 1.0
+
+
+def test_benchmark_headroom_hot_evening():
+    # Acceptance criterion 1: floor 7.8 kW, bound 6.03 kW, headroom 1.77 kW (about 23 %).
+    scenario = scenarios.hot_evening()
+    bench = optimal.benchmark(scenario, engine.run_coordinated(scenario))
+    assert bench.floor.limit_kw == 7.8
+    assert bench.optimal.peak_kw == pytest.approx(6.03, abs=0.005)
+    assert bench.headroom_kw == pytest.approx(7.8 - bench.optimal.peak_kw)
+    assert bench.headroom_pct == pytest.approx(22.7, abs=0.1)
+    assert bench.to_json_dict()["floor"]["limit_kw"] == 7.8
+
+
+def test_benchmark_headroom_none_without_floor():
+    scenario = scenarios.custom_scenario(ev_kwh=60, ev_deadline_min=60)
+    bench = optimal.benchmark(scenario, engine.run_coordinated(scenario))
+    assert bench.floor.limit_kw is None
+    assert bench.headroom_kw is None and bench.headroom_pct is None

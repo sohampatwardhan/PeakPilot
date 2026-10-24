@@ -35,7 +35,8 @@ pytest -q --cov
 | `tests/test_scenarios.py` | named scenarios are well-formed and deterministic |
 | `tests/test_massgis.py` | bundled CSVs load offline, counts and dates match `data/DATA.md` |
 | `tests/test_app.py` | headless dashboard smoke test (Streamlit `AppTest`) for every scenario, including the SIMULATED and MassGIS source labels |
-| `tests/test_optimal.py` | LP benchmark properties (bound, energy, comfort, reproducibility) |
+| `tests/test_optimal.py` | LP benchmark properties (bound, energy, comfort, reproducibility) and the reactive floor |
+| `tests/test_learn.py` | Hypothesis property tests for room-model calibration; reproduces the ML study results |
 
 CI fails if coverage of `peakpilot/` drops below 90%. With only `pip install pytest`,
 the engine, scenario and MassGIS tests still run and the dashboard test is skipped.
@@ -185,8 +186,29 @@ The framing is deliberately cautious:
   run times. A real schedule may not reach the bound.
 - **Infeasible means no number.** If no schedule can meet every deadline and the comfort
   limit, the panel says so instead of showing a figure.
-- The gap is large on easy limits because PeakPilot aims to stay under the limit you set,
-  not to push the peak as low as possible. No cost or emissions claims follow from the gap.
+- **Reactive floor, not the gap to your limit.** The headline compares the bound with the
+  lowest limit the scheduler can hold with every deadline met, 0 minutes over and the room in
+  comfort (a 0.1 kW sweep of the real engine). On Hot evening that floor is 7.8 kW against a
+  6.03 kW bound: 1.77 kW of headroom, not the 7.97 kW gap to the 14 kW limit you chose. In the
+  EV-offline scenario feasibility is not monotone in the limit, and the panel says so.
+  No cost or emissions claims follow from either number.
+
+### Where machine learning fits (analysis, not control)
+
+Two SciPy models in `peakpilot/learn.py` sit beside the scheduler, never in place of it:
+
+- **Calibrate the room model.** An output-error least-squares fit recovers the thermal model
+  from thermostat-style telemetry (SIMULATED here, with 0.2 °C sensor noise) to within 0.5 %.
+  A sidebar toggle runs both evenings on the fitted model. A real building would supply its
+  own thermostat and AC-meter data.
+- **What if the forecast is wrong?** The LP plans on a wrong base-load or outdoor forecast and
+  the plan is played against the true evening. Good forecasts beat the reactive floor by
+  1.0–1.7 kW; 0.5 kW of noise erases the gain, and a forecast 2 °C too cool breaks comfort for
+  462 minutes. That is why PeakPilot's control stays reactive.
+
+The research behind both, including a MATLAB R2026b cross-check that matches SciPy to ~1e-8,
+is in `.kiro/specs/ml-models/studies/` (`ml_studies.ipynb`). It runs on a development machine
+only: the app does not import it, and judges do not need MATLAB.
 
 ## Massachusetts context
 
@@ -329,11 +351,12 @@ app.py                  Streamlit dashboard (thin view over the engine)
 peakpilot/engine.py     simulation + least-slack-first scheduler (stdlib only)
 peakpilot/scenarios.py  named reproducible scenarios
 peakpilot/massgis.py    bundled MassGIS loader (no runtime network)
-peakpilot/optimal.py    perfect-foresight LP peak benchmark (SciPy)
+peakpilot/optimal.py    perfect-foresight LP peak benchmark + reactive floor (SciPy)
+peakpilot/learn.py      room-model calibration + forecast-error cost (SciPy; analysis only)
 rust/peakpilot-core/    Rust port of the engine + CLI + Raspberry Pi Dockerfile
 scripts/parity_check.py Python vs Rust output comparison (run in CI)
 data/                   MassGIS CSVs + DATA.md provenance
-tests/                  pytest suite (engine, scenarios, MassGIS, dashboard smoke, LP benchmark)
+tests/                  pytest suite (engine, scenarios, MassGIS, dashboard smoke, LP benchmark, learn)
 .kiro/                  steering, specs, and the Kiro usage write-up
 docs/                   demo script + submission checklist
 ```

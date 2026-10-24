@@ -21,12 +21,14 @@ to every result and the dashboard states both:
 
 Units follow the engine: power in kW (``*_kw``), energy in kWh (``*_kwh``),
 temperature in °C (``*_c``), time in minutes from 16:00. All values are SIMULATED.
-This module is the only place in PeakPilot that imports SciPy.
+Only this module and ``learn.py`` import SciPy.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 
@@ -34,7 +36,7 @@ import numpy as np
 from scipy import sparse
 from scipy.optimize import linprog
 
-from .engine import WINDOW_MINUTES, DeviceKind, RunResult, Scenario
+from .engine import WINDOW_MINUTES, DeviceKind, RunResult, Scenario, run_baseline, run_coordinated
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,39 @@ RELAXATIONS: tuple[str, ...] = (
 """Plain-language list of the engine rules the LP relaxes (why it is a lower bound)."""
 
 _FEASIBILITY_TOL = 1e-6  # kW / kWh tolerance for comparisons against the engine
+_FLOOR_START_KW = 5.0  # below the base load's evening peak, so no named scenario is feasible here
+
+
+@dataclass(frozen=True)
+class ReactiveFloor:
+    """Lowest power limit the coordinated scheduler holds with all work done (SIMULATED).
+
+    Attributes
+    ----------
+    limit_kw: Lowest limit on the search grid at which the coordinated run has 0
+        minutes over the limit, every task met by its deadline, and 0 minutes above
+        the comfort limit; ``None`` if no grid limit qualifies.
+    peak_kw: The coordinated run's peak demand in kW at ``limit_kw`` (at or under
+        it), or ``None``.
+    monotone: ``True`` when every grid limit above ``limit_kw`` also qualifies.
+        ``False`` means raising the limit can break feasibility again (the
+        EV-offline scenario does this), so the floor is not a safe "anything above
+        works" threshold. ``False`` when ``limit_kw`` is ``None``.
+    grid_kw: ``(start, stop, step)`` of the grid searched, in kW, stop inclusive.
+    """
+
+    limit_kw: float | None
+    peak_kw: float | None
+    monotone: bool
+    grid_kw: tuple[float, float, float]
+
+    def to_json_dict(self) -> dict:
+        return {
+            "limit_kw": self.limit_kw,
+            "peak_kw": self.peak_kw,
+            "monotone": self.monotone,
+            "grid_kw": list(self.grid_kw),
+        }
 
 
 @dataclass
@@ -120,6 +155,11 @@ class Benchmark:
         ``target_kwh`` before its ``deadline_min`` and had zero minutes above the
         comfort limit. Otherwise the coordinated run did different work and the
         comparison is not like-for-like.
+    floor: The scheduler's :class:`ReactiveFloor` for this scenario.
+    headroom_kw: ``floor.limit_kw - optimal.peak_kw`` in kW: how far below the
+        lowest limit the scheduler can hold perfect foresight could go. ``None``
+        unless both numbers exist.
+    headroom_pct: ``100 * headroom_kw / floor.limit_kw``, or ``None``.
     """
 
     optimal: OptimalResult
@@ -129,6 +169,9 @@ class Benchmark:
     gap_pct: float | None
     limit_achievable: bool | None
     coordinated_comparable: bool
+    floor: ReactiveFloor | None = None
+    headroom_kw: float | None = None
+    headroom_pct: float | None = None
 
     def to_json_dict(self) -> dict:
         """Serialize for any front end; the LP part omits ``solve_time_s``."""
@@ -140,6 +183,9 @@ class Benchmark:
             "gap_pct": self.gap_pct,
             "limit_achievable": self.limit_achievable,
             "coordinated_comparable": self.coordinated_comparable,
+            "floor": None if self.floor is None else self.floor.to_json_dict(),
+            "headroom_kw": self.headroom_kw,
+            "headroom_pct": self.headroom_pct,
         }
 
 
@@ -327,19 +373,60 @@ def _coordinated_comparable(scenario: Scenario, coordinated: RunResult) -> bool:
     return True
 
 
+def _holds_all_constraints(run: RunResult) -> bool:
+    return run.minutes_over_limit == 0 and run.all_tasks_met() and run.temp_violation_min == 0
+
+
+def reactive_floor(scenario: Scenario, step_kw: float = 0.1) -> ReactiveFloor:
+    """Lowest power limit at which the coordinated scheduler does all the work.
+
+    Runs ``engine.run_coordinated`` at every limit on a grid from 5.0 kW to the
+    uncoordinated peak rounded up to a whole kW (above that the limit never binds),
+    in ``step_kw`` steps. A limit qualifies when the run has 0 minutes over it, every
+    task met, and 0 minutes above the comfort limit. Only ``power_limit_kw`` changes
+    between runs; every other input is the scenario's own.
+
+    The whole grid is scanned rather than bisected: feasibility is not always
+    monotone in the limit (see :attr:`ReactiveFloor.monotone`). About 150 engine runs,
+    roughly 0.5 s. Deterministic. Schedules nothing itself.
+    """
+    if step_kw <= 0:
+        raise ValueError("step_kw must be > 0")
+    stop_kw = float(math.ceil(run_baseline(scenario).peak_kw))
+    steps = int(round((stop_kw - _FLOOR_START_KW) / step_kw))
+    # Integer steps, rounded, so 7.8 is 7.8 and not 7.800000000000001.
+    grid = [round(_FLOOR_START_KW + k * step_kw, 6) for k in range(steps + 1)]
+    holds: dict[float, tuple[bool, float]] = {}
+    for limit in grid:
+        run = run_coordinated(dataclasses.replace(scenario, power_limit_kw=limit))
+        holds[limit] = (_holds_all_constraints(run), run.peak_kw)
+    feasible = [limit for limit in grid if holds[limit][0]]
+    if not feasible:
+        return ReactiveFloor(None, None, False, (_FLOOR_START_KW, stop_kw, step_kw))
+    lowest = feasible[0]
+    monotone = all(holds[limit][0] for limit in grid if limit >= lowest)
+    return ReactiveFloor(lowest, holds[lowest][1], monotone, (_FLOOR_START_KW, stop_kw, step_kw))
+
+
 def benchmark(scenario: Scenario, coordinated: RunResult) -> Benchmark:
     """Compare ``coordinated`` (from ``engine.run_coordinated(scenario)``) with the LP bound.
 
     Returns the LP result plus the gap in kW and %, whether the power limit is
-    achievable with perfect foresight, and whether the coordinated run is a
-    like-for-like comparison. Gap fields are ``None`` when the LP is not optimal.
+    achievable with perfect foresight, whether the coordinated run is a
+    like-for-like comparison, and the scheduler's :func:`reactive_floor` with the
+    headroom between that floor and the bound. Gap and headroom fields are ``None``
+    when the numbers they need do not exist.
     """
     opt = solve(scenario)
-    gap_kw = gap_pct = limit_achievable = None
+    floor = reactive_floor(scenario)
+    gap_kw = gap_pct = limit_achievable = headroom_kw = headroom_pct = None
     if opt.peak_kw is not None:
         gap_kw = coordinated.peak_kw - opt.peak_kw
         gap_pct = 100.0 * gap_kw / coordinated.peak_kw if coordinated.peak_kw > 0 else 0.0
         limit_achievable = opt.peak_kw <= scenario.power_limit_kw + _FEASIBILITY_TOL
+        if floor.limit_kw is not None:
+            headroom_kw = floor.limit_kw - opt.peak_kw
+            headroom_pct = 100.0 * headroom_kw / floor.limit_kw
     return Benchmark(
         optimal=opt,
         coordinated_peak_kw=coordinated.peak_kw,
@@ -348,4 +435,7 @@ def benchmark(scenario: Scenario, coordinated: RunResult) -> Benchmark:
         gap_pct=gap_pct,
         limit_achievable=limit_achievable,
         coordinated_comparable=_coordinated_comparable(scenario, coordinated),
+        floor=floor,
+        headroom_kw=headroom_kw,
+        headroom_pct=headroom_pct,
     )

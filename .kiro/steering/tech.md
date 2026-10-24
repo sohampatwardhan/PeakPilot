@@ -9,10 +9,16 @@
 - **Dashboard:** Streamlit. Fastest route from a Python engine to an interactive, demo-ready UI.
 - **Charts:** Plotly (via Streamlit) for the demand and temperature charts.
 - **Data handling:** pandas for shaping MassGIS tables and simulation output for display.
-- **Optimal benchmark:** SciPy (`scipy.optimize.linprog`, HiGHS), pinned in `requirements.txt`.
-  Allowed in `peakpilot/optimal.py` only. `engine.py` stays standard library only.
+- **Optimal benchmark and learned analysis:** SciPy (`scipy.optimize.linprog` with HiGHS;
+  `scipy.linalg.lstsq` and `scipy.optimize.least_squares` for calibration), pinned in
+  `requirements.txt`. Allowed in `peakpilot/optimal.py` and `peakpilot/learn.py` only.
+  `engine.py` stays standard library only.
+- **Research studies:** `.kiro/specs/ml-models/studies/` (Python notebook, MATLAB cross-check).
+  Development-machine evidence only: never imported by the app, the tests' code paths, or the
+  Raspberry Pi image.
 - **Tests:** pytest for engine correctness (energy accounting, limits, deadlines, infeasibility,
-  reproducibility).
+  reproducibility). Hypothesis (pinned in the `test` extra) for property-based tests of
+  `learn.py`, derandomized so CI runs are repeatable.
 
 All runtime dependencies are pinned in `requirements.txt`.
 
@@ -23,7 +29,8 @@ peakpilot/
   engine.py        # pure-stdlib simulation + scheduler (no UI imports)
   scenarios.py     # named, reproducible scenarios
   massgis.py       # loads bundled MassGIS CSVs, returns typed rows
-  optimal.py       # perfect-foresight LP peak benchmark (the only SciPy user)
+  optimal.py       # perfect-foresight LP peak benchmark + reactive floor (SciPy)
+  learn.py         # room-model calibration + forecast-error cost (SciPy; analysis only)
 app.py             # Streamlit dashboard (imports engine, never redefines control logic)
 data/              # bundled MassGIS CSVs + a DATA.md provenance file
 tests/             # pytest suite

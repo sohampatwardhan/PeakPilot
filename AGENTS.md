@@ -59,6 +59,14 @@ pytest -q            # engine correctness — must stay green
 streamlit run app.py # dashboard
 ```
 
+## How changes land
+
+New tasks and major changes follow: GitHub issue → Kiro spec under
+`.kiro/specs/<feature>/` → branch from `main` → PR with `Closes #<issue>` → merge
+when CI is green and the user confirms. Small fixes skip the spec but still use an
+issue, a branch, and a PR. Nothing is committed directly to `main`. Full rules:
+`.kiro/steering/workflow.md`.
+
 ## Definition of done for a change
 
 - `pytest -q` is green (CI enforces this on every push/PR).

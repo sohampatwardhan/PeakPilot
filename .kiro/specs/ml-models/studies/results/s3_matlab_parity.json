@@ -1,0 +1,31 @@
+{
+  "label": "SIMULATED; MATLAB R2026b base + Optimization Toolbox",
+  "matlab_release": "2026b",
+  "thermal": {
+    "ee_a": 0.070277204356562969,
+    "ee_b": 0.35874390452367266,
+    "ee_s": 0.02185325,
+    "oe_a": 0.0693443435548906,
+    "oe_b": 0.35519595672838966,
+    "oe_s": 0.075094208333333329,
+    "scipy_ee_a": 0.070277205082889052,
+    "scipy_ee_b": 0.35874390982287124,
+    "scipy_oe_a": 0.069344343154558022,
+    "scipy_oe_b": 0.35519595544393945,
+    "max_abs_diff_ee": 5.2991985799444308E-9,
+    "max_abs_diff_oe": 1.2844502128572799E-9
+  },
+  "forecast": {
+    "ridge_test_mae_kw": 0.1408801947302494,
+    "scipy_ridge_test_mae_kw": 0.14088027469846578,
+    "abs_diff_kw": 7.9968216382120261E-8,
+    "fit_s": 0.0038360416666666669
+  },
+  "interop": {
+    "ok": true,
+    "python": "3.12",
+    "coordinated_peak_kw": 14,
+    "max_abs_diff_room_vs_csv_c": 4.99863368474962E-7,
+    "call_s": 0.10651158333333334
+  }
+}

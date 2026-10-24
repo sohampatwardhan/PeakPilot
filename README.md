@@ -6,6 +6,41 @@ PeakPilot is an IoT energy coordinator that cuts a building's peak electricity d
 
 A dashboard runs the same evening twice — once without coordination, once with PeakPilot — and compares peak demand, energy delivered, deadlines met, and comfort, with a plain-language log of every decision. It handles devices going offline and flags when a limit can't be met instead of hiding it.
 
+## Quick start
+
+Requires Python 3.11+. No network or credentials needed — the MassGIS data is bundled.
+
+```bash
+git clone https://github.com/sohampatwardhan/PeakPilot.git
+cd PeakPilot
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+The dashboard opens in your browser. In the sidebar, pick a **scenario**, set the
+**power limit** and device energy/deadlines, then read the before/after comparison.
+
+Run the engine tests (no dashboard needed — the engine is pure standard library):
+
+```bash
+pip install pytest
+pytest -q
+```
+
+## Demo in 60 seconds
+
+1. Start on **Hot evening (14 kW)**: the red uncoordinated run peaks at ~19 kW over the
+   limit; the green coordinated run holds 14 kW (−26%), 0 minutes over, all deadlines met.
+2. Switch to **EV offline 18:00–18:45**: the device panel marks the charger OFFLINE and the
+   log shows the controller reserving its last power.
+3. Switch to **Infeasible (8 kW, early EV deadline)**: the honesty banner reports the minutes
+   over the limit instead of hiding them.
+4. Change **Town** (e.g. Carver) to see its MassGIS electric utility and listed landfill
+   renewable projects — public facts, kept separate from the simulation.
+
+Full spoken walkthrough: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
+
 ## The problem
 
 When several devices switch on together, they create a large demand peak. The peak, not total energy, is what strains the grid and drives demand charges. Some loads — a battery charger, a water heater — can wait briefly. PeakPilot answers one question:
@@ -84,6 +119,39 @@ And deliberately excludes:
 - Authentication, custom electronics, and live utility integrations
 - Machine-learning control (the scheduler is rules-based and explainable)
 - Carbon or cost savings claims (reducing peak demand does not by itself reduce total energy or emissions)
+
+## Assumptions and limitations
+
+- **All device telemetry is simulated.** PeakPilot does not connect to or control real
+  equipment. Readings carry an ID and timestamp so a real sensor/controller could later
+  implement the same interface, but nothing here is a live measurement.
+- **The thermal model is illustrative.** The room is a single first-order RC lump tuned so a
+  hot evening is interesting; it is not a calibrated model of any real building.
+- **The scheduler is deterministic and rules-based** (least-slack-first). Same inputs → same
+  output. No learning, no randomness in the control path.
+- **MassGIS data describes infrastructure only.** It does not establish live grid demand,
+  available capacity, electricity price, carbon intensity, or which generator supplies a
+  building. Reported landfill capacity (MW) is **not** generation.
+- **No cost or carbon savings are claimed.** Reducing a peak does not by itself reduce total
+  energy or emissions, and we have no data to support such claims.
+- **Offline handling is an explicit assumption:** an offline device is assumed to hold its
+  last commanded power, and that assumption is disclosed in the decision log.
+
+## Project structure
+
+```
+app.py                  Streamlit dashboard (thin view over the engine)
+peakpilot/engine.py     simulation + least-slack-first scheduler (stdlib only)
+peakpilot/scenarios.py  named reproducible scenarios
+peakpilot/massgis.py    bundled MassGIS loader (no runtime network)
+data/                   MassGIS CSVs + DATA.md provenance
+tests/                  pytest suite (engine correctness)
+.kiro/                  steering, specs, and the Kiro usage write-up
+docs/                   demo script + submission checklist
+```
+
+See [AGENTS.md](AGENTS.md) for contributor/agent conventions and
+[.kiro/KIRO_USAGE.md](.kiro/KIRO_USAGE.md) for how Kiro was used.
 
 ## Data sources and attribution
 

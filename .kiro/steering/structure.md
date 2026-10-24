@@ -7,7 +7,7 @@ PeakPilot/
   app.py                  # Streamlit dashboard entry point
   peakpilot/
     __init__.py
-    engine.py             # pure-stdlib simulation + least-slack-first scheduler
+    engine.py             # pure-stdlib simulation + least-slack-first scheduler + PV/MPPT
     scenarios.py          # named reproducible scenarios + Scenario dataclass
     massgis.py            # loads bundled MassGIS CSVs into typed rows
     optimal.py            # perfect-foresight LP peak benchmark (SciPy; lower bound) + reactive floor
@@ -19,6 +19,7 @@ PeakPilot/
   tests/
     test_engine.py        # energy accounting, limits, deadlines, infeasibility, reproducibility
     test_optimal.py       # LP bound <= coordinated peak, energy, comfort, limits, reproducibility
+    test_solar.py         # rooftop PV + MPPT bounds, net-load accounting, no-solar unchanged
     test_learn.py         # Hypothesis properties + study reproduction for learn.py
   studies/
     ml_studies.ipynb      # executed research notebook (SIMULATED; dev machine only, not shipped)

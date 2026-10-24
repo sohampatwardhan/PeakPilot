@@ -36,7 +36,15 @@ import numpy as np
 from scipy import sparse
 from scipy.optimize import linprog
 
-from .engine import WINDOW_MINUTES, DeviceKind, RunResult, Scenario, run_baseline, run_coordinated
+from .engine import (
+    WINDOW_MINUTES,
+    DeviceKind,
+    RunResult,
+    Scenario,
+    pv_kw_series,
+    run_baseline,
+    run_coordinated,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +106,7 @@ class OptimalResult:
     message: Solver message; most useful when ``status == "error"``.
     peak_kw: Lowest achievable peak building demand in kW under the LP, or ``None``
         unless ``status == "optimal"``.
-    total_kw: Building demand per minute in kW (base load plus devices). Empty unless
+    total_kw: Net building demand per minute in kW (base load minus PV plus devices). Empty unless
         optimal.
     per_device_kw: Device id -> power per minute in kW. Empty unless optimal.
     room_c: Room temperature per minute in °C, ``room_c[0] == thermal.start_c``.
@@ -217,7 +225,8 @@ def solve(scenario: Scenario) -> OptimalResult:
     and the peak ``P`` in kW, for ``t = 0..959`` (minute 0 == 16:00). The LP
     minimizes ``P`` subject to:
 
-    * ``base_load[t] + sum_d p[d, t] <= P`` for every minute;
+    * ``base_load[t] - pv[t] + sum_d p[d, t] <= P`` for every minute, where ``pv`` is
+      the engine's MPPT output (all zeros without solar);
     * ``0 <= p[d, t] <= max_kw``;
     * energy devices: ``sum_{t < deadline} p[d, t] / 60 == target_kwh`` and
       ``p[d, t] == 0`` from the deadline on (the engine does exactly this much work);
@@ -243,6 +252,8 @@ def solve(scenario: Scenario) -> OptimalResult:
     thermal = scenario.thermal
     a = 1.0 / (thermal.r * thermal.c)
     b = thermal.eta / thermal.c
+    # Same net load as the engine: on-site PV offsets base load (zeros without solar).
+    net_base = np.asarray(scenario.base_load, dtype=float) - np.asarray(pv_kw_series(scenario))
 
     def pv(di: int, t: int) -> int:
         return di * n + t
@@ -253,7 +264,7 @@ def solve(scenario: Scenario) -> OptimalResult:
     lower = np.zeros(n_vars)
     upper = np.zeros(n_vars)
 
-    # Peak rows: sum_d p[d, t] - P <= -base_load[t].
+    # Peak rows: sum_d p[d, t] - P <= -(base_load[t] - pv[t]).
     ub_rows: list[int] = []
     ub_cols: list[int] = []
     ub_vals: list[float] = []
@@ -266,7 +277,7 @@ def solve(scenario: Scenario) -> OptimalResult:
         ub_cols.append(p_idx)
         ub_vals.append(-1.0)
     a_ub = sparse.csr_array((ub_vals, (ub_rows, ub_cols)), shape=(n, n_vars))
-    b_ub = -np.asarray(scenario.base_load, dtype=float)
+    b_ub = -net_base
 
     eq_rows: list[int] = []
     eq_cols: list[int] = []
@@ -339,7 +350,7 @@ def solve(scenario: Scenario) -> OptimalResult:
 
     x = res.x
     per_device_kw = {d.id: x[pv(di, 0) : pv(di, n)].tolist() for di, d in enumerate(devices)}
-    total = np.asarray(scenario.base_load, dtype=float)
+    total = net_base.copy()
     for di in range(nd):
         total = total + x[pv(di, 0) : pv(di, n)]
     return OptimalResult(

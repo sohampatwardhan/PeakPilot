@@ -99,6 +99,13 @@ def _demand_figure(cmp: engine.CompareResult) -> go.Figure:
             line=dict(color="#2e8b57", width=2),
         )
     )
+    if cmp.solar is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=x, y=list(cmp.solar.pv_kw), name="Rooftop PV output (MPPT)",
+                line=dict(color="#e0a800", width=1.5, dash="dot"),
+            )
+        )
     fig.add_hline(
         y=cmp.power_limit_kw, line_dash="dash", line_color="#444",
         annotation_text=f"Power limit {cmp.power_limit_kw:.0f} kW",
@@ -106,7 +113,8 @@ def _demand_figure(cmp: engine.CompareResult) -> go.Figure:
     )
     fig.update_layout(
         height=360, margin=dict(l=10, r=10, t=30, b=10),
-        xaxis_title="Time (16:00 → 08:00, SIMULATED)", yaxis_title="Total demand (kW)",
+        xaxis_title="Time (16:00 → 08:00, SIMULATED)",
+        yaxis_title="Net grid demand (kW)" if cmp.solar is not None else "Total demand (kW)",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
         xaxis=dict(nticks=12),
     )
@@ -317,6 +325,19 @@ if co.minutes_over_limit > 0 or co.temp_violation_min > 0 or not co.all_tasks_me
 # Charts.
 st.subheader("Demand: uncoordinated vs coordinated (SIMULATED)")
 st.plotly_chart(_demand_figure(cmp), use_container_width=True)
+if cmp.solar is not None:
+    sol = cmp.solar
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Rooftop PV energy", f"{sol.pv_kwh:.1f} kWh", help="SIMULATED AC output of the PV inverter over the window")
+    s2.metric("MPPT tracking efficiency", f"{100 * sol.tracking_efficiency:.2f}%", help="Tracked ÷ true maximum-power-point DC energy over sunlit minutes (SIMULATED)")
+    s3.metric("Peak PV output", f"{max(sol.pv_kw):.1f} kW", help="Highest one-minute PV output (SIMULATED)")
+    st.caption(
+        "Rooftop solar is SIMULATED: an illustrative clear-sky irradiance curve and a ~6 kW array "
+        "whose inverter tracks the maximum power point by perturb and observe. Demand above is "
+        "net grid import (loads minus PV), and the power limit applies to it. Both runs get the "
+        "same PV. Not measured data, not derived from MassGIS capacity, and no cost or emissions "
+        "claims."
+    )
 
 st.subheader("Room temperature (SIMULATED, illustrative thermal model)")
 st.plotly_chart(_temp_figure(cmp), use_container_width=True)

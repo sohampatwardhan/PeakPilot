@@ -256,6 +256,8 @@ def test_log_fix_left_scheduling_unchanged():
         "Infeasible (8 kW, early EV deadline)": (14.9102, 40.0, 9.0, 15.75, 291, 0),
     }
     for name, build in scenarios.SCENARIOS.items():
+        if name not in expected:
+            continue  # scenario added after #25 (e.g. rooftop PV, #33)
         run = engine.run_coordinated(build())
         kwh = run.per_device_kwh
         got = (

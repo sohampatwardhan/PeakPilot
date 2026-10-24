@@ -50,8 +50,12 @@ def test_every_scenario_renders(scenario_name):
     assert at.sidebar.selectbox[0].value == scenario_name
     assert at.title[0].value == "PeakPilot"
     # 5 headline metrics + 3 in the "How close to optimal?" panel + 3 in its forecast
-    # expander (every named scenario has a solvable benchmark and forecast plan).
-    assert len(at.metric) == 11
+    # expander (every named scenario has a solvable benchmark and forecast plan), plus
+    # 3 rooftop-PV metrics when the scenario has solar.
+    has_solar = scenarios.scenarios()[scenario_name]().solar is not None
+    assert len(at.metric) == 11 + (3 if has_solar else 0)
+    if has_solar:
+        assert any(m.label == "MPPT tracking efficiency" for m in at.metric)
     assert "How close to optimal? (SIMULATED)" in [s.value for s in at.subheader]
     assert any(m.label == "Lower bound on achievable peak (kW)" for m in at.metric)
     assert any(m.label == "Reactive floor (kW)" for m in at.metric)

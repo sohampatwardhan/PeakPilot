@@ -9,6 +9,7 @@ power limit and the EV / water-heater energy and deadlines from the UI.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 
 from .engine import (
@@ -16,6 +17,7 @@ from .engine import (
     DeviceKind,
     DeviceSpec,
     Scenario,
+    Solar,
     ThermalParams,
 )
 
@@ -48,6 +50,24 @@ def _outdoor_profile(peak_c: float = 31.0, low_c: float = 19.0) -> tuple[float, 
         # Cosine from an ~17:30 warmth peak to an ~05:00 low.
         frac = (math.cos((hour - 17.5) / 24.0 * 2 * math.pi) + 1) / 2
         vals.append(round(low_c + (peak_c - low_c) * frac, 4))
+    return tuple(vals)
+
+
+def clear_sky_irradiance(
+    peak_w_m2: float = 950.0, sunrise_h: float = 5.25, sunset_h: float = 20.33
+) -> tuple[float, ...]:
+    """Illustrative clear-sky plane-of-array irradiance in W/m² across the window.
+
+    A smoothed half-sine between sunrise and sunset (defaults: a Boston summer day,
+    05:15 to 20:20). SIMULATED: not measured weather data, and never derived from
+    MassGIS installed capacity. Zero between sunset and sunrise.
+    """
+    vals: list[float] = []
+    for m in range(WINDOW_MINUTES):
+        hour = ((16 * 60 + m) / 60.0) % 24.0
+        frac = (hour - sunrise_h) / (sunset_h - sunrise_h)
+        g = peak_w_m2 * math.sin(math.pi * frac) ** 1.3 if 0.0 < frac < 1.0 else 0.0
+        vals.append(round(g, 4))
     return tuple(vals)
 
 
@@ -171,12 +191,26 @@ def infeasible() -> Scenario:
     )
 
 
+def sunny_evening() -> Scenario:
+    """The tight 11 kW case plus a SIMULATED ~6 kW rooftop PV array with MPPT."""
+    return dataclasses.replace(
+        tight_limit(),
+        name="Sunny evening + rooftop PV (11 kW)",
+        solar=Solar(irradiance_w_m2=clear_sky_irradiance()),
+        note="The tight 11 kW case with a SIMULATED ~6 kW rooftop PV array. Its inverter "
+        "tracks the maximum power point (perturb and observe). PV offsets demand until "
+        "sunset and again after sunrise, so the limit applies to net grid import. "
+        "Irradiance is an illustrative clear-sky curve, not measured data.",
+    )
+
+
 # Registry for the dashboard scenario picker.
 SCENARIOS = {
     "Hot evening (14 kW)": hot_evening,
     "Tight limit (11 kW)": tight_limit,
     "EV offline 18:00–18:45": ev_offline,
     "Infeasible (8 kW, early EV deadline)": infeasible,
+    "Sunny evening + rooftop PV (11 kW)": sunny_evening,
 }
 
 

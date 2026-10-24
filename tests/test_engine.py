@@ -168,3 +168,103 @@ def test_offline_device_never_draws_past_its_target():
     for m in range(WINDOW_MINUTES):
         drawn = sum(series[m] for series in run.per_device_kw.values())
         assert math.isclose(run.total_kw[m], s.base_load[m] + drawn, abs_tol=1e-9)
+
+
+# --- Decision log: one entry per state change (R2.6, issue #25) -------------
+
+# Named scenarios plus custom ones that reach rarer branches: an EV finishing during an
+# outage, a water heater that cannot fit a full min run, and a heavily overloaded night.
+_LOG_SCENARIOS = [build() for build in scenarios.SCENARIOS.values()] + [
+    scenarios.custom_scenario(ev_kwh=5.0, ev_offline=(20, 140)),
+    scenarios.custom_scenario(power_limit_kw=9.0, wh_deadline_min=600),
+    scenarios.custom_scenario(power_limit_kw=6.0, ev_kwh=50.0, ev_deadline_min=300, peak_outdoor_c=35.0),
+]
+
+
+def _device_log(run, device: str) -> list[engine.DecisionEntry]:
+    return [d for d in run.decision_log if d.device == device]
+
+
+def test_log_has_no_consecutive_duplicate_messages():
+    """No device logs the same message twice in a row: the log records changes only."""
+    for s in _LOG_SCENARIOS:
+        run = engine.run_coordinated(s)
+        for device in run.per_device_kw:
+            messages = [d.message for d in _device_log(run, device)]
+            repeats = [a for a, b in zip(messages, messages[1:]) if a == b]
+            assert not repeats, f"{s.name} {device}: repeated {repeats[:1]}"
+
+
+def test_water_heater_on_and_off_transitions_are_logged():
+    """Every off->on and on->off edge in the water-heater power series has a log entry."""
+    for s in _LOG_SCENARIOS:
+        run = engine.run_coordinated(s)
+        series = run.per_device_kw["wh-1"]
+        logged = {d.minute for d in _device_log(run, "wh-1")}
+        edges = [m for m in range(1, WINDOW_MINUTES) if (series[m - 1] > 0) != (series[m] > 0)]
+        if series[0] > 0:
+            edges.insert(0, 0)
+        assert edges, s.name
+        missing = [engine.clock(m) for m in edges if m not in logged]
+        assert not missing, f"{s.name}: unlogged water-heater transitions at {missing}"
+
+
+def test_ev_return_from_throttled_to_full_is_logged():
+    """An EV stepping up from a throttled rate to its full rate gets a log entry."""
+    seen = 0
+    for s in _LOG_SCENARIOS:
+        run = engine.run_coordinated(s)
+        ev = run.per_device_kw["ev-1"]
+        max_kw = next(d.max_kw for d in s.devices if d.id == "ev-1")
+        logged = {d.minute: d.message for d in _device_log(run, "ev-1")}
+        for m in range(1, WINDOW_MINUTES):
+            if 0 < ev[m - 1] < max_kw - 1e-9 and ev[m] >= max_kw - 1e-9:
+                seen += 1
+                assert m in logged, f"{s.name}: EV back to full at {engine.clock(m)} not logged"
+                assert "throttled" not in logged[m]
+    assert seen > 0  # the scenarios do exercise this transition
+
+
+def test_deadline_breach_logged_once_per_episode():
+    """A deadline-forced breach is logged once per contiguous over-limit episode."""
+    breach = "deadline forces full power"
+    for s in _LOG_SCENARIOS:
+        run = engine.run_coordinated(s)
+        over = [v > s.power_limit_kw + 1e-9 for v in run.total_kw]
+        episode, current = [], -1
+        for m in range(WINDOW_MINUTES):
+            if over[m] and (m == 0 or not over[m - 1]):
+                current += 1
+            episode.append(current if over[m] else None)
+        for device in run.per_device_kw:
+            hits = [d.minute for d in _device_log(run, device) if d.message.startswith(breach)]
+            assert all(episode[m] is not None for m in hits), f"{s.name} {device}: breach outside over-limit"
+            per_episode = [episode[m] for m in hits]
+            assert len(per_episode) == len(set(per_episode)), f"{s.name} {device}: breach re-logged"
+    infeasible = engine.run_coordinated(scenarios.infeasible())
+    hits = [d for d in infeasible.decision_log if d.message.startswith(breach)]
+    assert len(hits) == 1 and hits[0].device == "ev-1"
+
+
+def test_log_fix_left_scheduling_unchanged():
+    """Coordinated metrics pinned to their values before the decision-log fix (#25)."""
+    expected = {
+        # name: (peak_kw, ev_kwh, wh_kwh, ac_kwh, minutes_over_limit, temp_violation_min)
+        "Hot evening (14 kW)": (14.0, 30.0, 9.0, 12.25, 0, 0),
+        "Tight limit (11 kW)": (11.0, 30.0, 9.0, 12.25, 0, 0),
+        "EV offline 18:00–18:45": (14.2907, 30.0, 9.0, 12.25, 25, 0),
+        "Infeasible (8 kW, early EV deadline)": (14.9102, 40.0, 9.0, 15.75, 291, 0),
+    }
+    for name, build in scenarios.SCENARIOS.items():
+        run = engine.run_coordinated(build())
+        kwh = run.per_device_kwh
+        got = (
+            round(run.peak_kw, 4),
+            round(kwh["ev-1"], 4),
+            round(kwh["wh-1"], 4),
+            round(kwh["ac-1"], 4),
+            run.minutes_over_limit,
+            run.temp_violation_min,
+        )
+        assert got == expected[name], name
+        assert run.all_tasks_met(), name

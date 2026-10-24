@@ -87,6 +87,84 @@ fn log(entries: &mut Vec<DecisionEntry>, minute: u32, device: &str, message: imp
     });
 }
 
+/// An energy task's control state for one minute, mirroring Python's `_task_state`.
+/// The coordinated run logs a decision only when this differs from the last minute's.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TaskState {
+    Done,
+    Offline,
+    Off,
+    OverLimit,
+    Throttled,
+    Full,
+}
+
+/// Which pass-2 branch set a task's power this minute. Read only by the decision log.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Cause {
+    Deadline,
+    Paused,
+    LockStart,
+    WaitNow,
+    WaitRun,
+    Share,
+}
+
+/// Classify a task from its final power this minute (Python `_task_state`).
+fn task_state(s: &DeviceState, breached: bool) -> TaskState {
+    if s.remaining_kwh() <= 0.0 {
+        TaskState::Done
+    } else if !s.online {
+        TaskState::Offline
+    } else if s.power_kw <= 0.0 {
+        TaskState::Off
+    } else if breached {
+        TaskState::OverLimit
+    } else if s.power_kw < py_min(s.spec.max_kw, s.remaining_kwh() * 60.0) - 1e-9 {
+        TaskState::Throttled
+    } else {
+        TaskState::Full
+    }
+}
+
+/// Plain-language log line for a task moving from `prev` to `new` (Python `_task_message`).
+fn task_message(s: &DeviceState, prev: TaskState, new: TaskState, cause: Option<Cause>) -> String {
+    let text = match new {
+        TaskState::Done => "task complete — stopping",
+        TaskState::OverLimit => "deadline forces full power — exceeding limit (SIMULATED)",
+        TaskState::Off => match cause {
+            Some(Cause::WaitRun) => {
+                return format!(
+                    "heating OFF — limit too tight to guarantee a full {}-min run",
+                    s.spec.min_run_min
+                )
+            }
+            Some(Cause::WaitNow) => "heating OFF — not enough headroom for full power",
+            _ => "paused to hold building under power limit",
+        },
+        TaskState::Throttled => match prev {
+            TaskState::Full | TaskState::OverLimit => "throttled to fit power limit",
+            _ => "resumed, throttled to fit power limit",
+        },
+        // Offline is announced by the OFFLINE line itself and is never classified as a
+        // change from an online state here; the arm exists only for exhaustiveness.
+        TaskState::Offline => "offline",
+        TaskState::Full => match prev {
+            TaskState::OverLimit => "full power now fits under the limit",
+            TaskState::Throttled => "back to full power — headroom available",
+            _ if s.spec.kind == DeviceKind::WaterHeater => match cause {
+                Some(Cause::LockStart) => {
+                    return format!("heating ON (min run {} min)", s.spec.min_run_min)
+                }
+                Some(Cause::Deadline) => "heating ON — deadline requires full power",
+                _ => "heating ON",
+            },
+            _ => "resumed within available headroom",
+        },
+    };
+    text.to_string()
+}
+
 /// Per-run series collected minute by minute.
 struct Series {
     minutes: Vec<u32>,
@@ -253,6 +331,19 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
         .position(|s| s.spec.kind == DeviceKind::WaterHeater);
     let ac_reserve_kw = ac_idx.map(|a| states[a].spec.max_kw).unwrap_or(0.0);
     let limit = scenario.power_limit_kw;
+    // Last logged control state per energy task (None for the AC).
+    let mut last_state: Vec<Option<TaskState>> = states
+        .iter()
+        .map(|s| {
+            s.spec.kind.is_energy_task().then(|| {
+                if s.remaining_kwh() <= 0.0 {
+                    TaskState::Done
+                } else {
+                    TaskState::Off
+                }
+            })
+        })
+        .collect();
 
     for step in 0..WINDOW_MINUTES {
         let m = step as u32;
@@ -260,7 +351,7 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
         let mut cooling_kw = 0.0;
 
         // Refresh online state and disclose offline transitions.
-        for s in states.iter_mut() {
+        for (i, s) in states.iter_mut().enumerate() {
             let online = s.spec.is_online_at(m);
             let prev_online = s.online;
             s.online = online;
@@ -268,6 +359,12 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
                 let msg = if online {
                     "reconnected; resuming control".to_string()
                 } else {
+                    // The OFFLINE line is this task's state-change entry.
+                    if let Some(st) = last_state[i].as_mut() {
+                        if *st != TaskState::Done {
+                            *st = TaskState::Offline;
+                        }
+                    }
                     format!(
                         "OFFLINE — holding last power {:.1} kW, reserving headroom (SIMULATED)",
                         s.power_kw
@@ -350,6 +447,11 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
                 .cmp(&(slack_of(&states[b], m), &states[b].spec.id))
         });
 
+        // Which pass-2 branch set each task's power, and which tasks breached the limit.
+        // Read only by the decision log below; never by the scheduler.
+        let mut cause: Vec<Option<Cause>> = vec![None; states.len()];
+        let mut breached = vec![false; states.len()];
+
         for i in startable {
             let s = &mut states[i];
             let slack = slack_of(s, m);
@@ -358,24 +460,11 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
 
             let power = if slack <= 0 {
                 // Out of slack: full power even if that breaches the limit.
-                if full > headroom + 1e-9 {
-                    log(
-                        &mut decisions,
-                        m,
-                        &s.spec.id,
-                        "deadline forces full power — exceeding limit (SIMULATED)",
-                    );
-                }
+                cause[i] = Some(Cause::Deadline);
+                breached[i] = full > headroom + 1e-9;
                 full
             } else if headroom <= 1e-9 {
-                if s.power_kw > 0.0 {
-                    log(
-                        &mut decisions,
-                        m,
-                        &s.spec.id,
-                        "paused to hold building under power limit",
-                    );
-                }
+                cause[i] = Some(Cause::Paused);
                 0.0
             } else if s.spec.kind == DeviceKind::WaterHeater {
                 // On/off device: start only if the limit holds for the whole minimum run,
@@ -391,30 +480,17 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
                 let fits_run = forecast_floor <= limit + 1e-9;
                 if fits_now && fits_run {
                     s.run_remaining_min = s.spec.min_run_min.saturating_sub(1);
-                    log(
-                        &mut decisions,
-                        m,
-                        &s.spec.id,
-                        format!("heating ON (min run {} min)", s.spec.min_run_min),
-                    );
+                    cause[i] = Some(Cause::LockStart);
                     py_min(s.spec.max_kw, s.remaining_kwh() * 60.0)
                 } else {
+                    // Too tight to guarantee the whole run; wait for a quieter window.
+                    cause[i] = Some(if fits_run { Cause::WaitNow } else { Cause::WaitRun });
                     0.0
                 }
             } else {
                 // EV: continuously throttleable, absorbs the remaining headroom.
-                let p = py_min(full, headroom);
-                if p < full - 1e-9 && s.power_kw >= full - 1e-9 {
-                    log(&mut decisions, m, &s.spec.id, "throttled to fit power limit");
-                } else if s.power_kw == 0.0 && p > 0.0 {
-                    log(
-                        &mut decisions,
-                        m,
-                        &s.spec.id,
-                        "resumed within available headroom",
-                    );
-                }
-                p
+                cause[i] = Some(Cause::Share);
+                py_min(full, headroom)
             };
 
             s.power_kw = power;
@@ -425,12 +501,20 @@ pub fn run_coordinated(scenario: &Scenario) -> RunResult {
         for (i, s) in states.iter_mut().enumerate() {
             let is_task = s.spec.kind.is_energy_task();
             if s.remaining_kwh() <= 0.0 && is_task && s.power_kw > 0.0 {
-                log(&mut decisions, m, &s.spec.id, "task complete — stopping");
                 s.power_kw = 0.0;
             } else if is_task && !s.online {
                 // An offline device stops on its own at its target, so it never draws
                 // more than it still owes. The controller still reserved its last power.
                 s.power_kw = py_min(s.power_kw, s.remaining_kwh() * 60.0);
+            }
+            if let Some(prev) = last_state[i] {
+                // Log only when the task's control state differs from last minute's.
+                let new = task_state(s, breached[i]);
+                if new != prev {
+                    let msg = task_message(s, prev, new, cause[i]);
+                    log(&mut decisions, m, &s.spec.id, msg);
+                    last_state[i] = Some(new);
+                }
             }
             s.delivered_kwh += s.power_kw / 60.0;
             series.per_device_kw[i].push(s.power_kw);

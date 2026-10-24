@@ -313,6 +313,61 @@ def _log(log: list[DecisionEntry], minute: int, device: str, message: str) -> No
     log.append(DecisionEntry(minute=minute, device=device, message=message))
 
 
+def _task_state(s: DeviceState, breached: bool) -> str:
+    """Classify an energy task's control state for this minute, from its final power.
+
+    One of ``done`` (target met), ``offline``, ``off``, ``over_limit`` (deadline forced
+    full power past the limit), ``throttled`` (EV below its full rate), or ``full``. The
+    coordinated run logs a decision only when this state differs from the last minute's.
+    """
+    if s.remaining_kwh() <= 0:
+        return "done"
+    if not s.online:
+        return "offline"
+    if s.power_kw <= 0:
+        return "off"
+    if breached:
+        return "over_limit"
+    if s.power_kw < min(s.spec.max_kw, s.remaining_kwh() * 60.0) - 1e-9:
+        return "throttled"
+    return "full"
+
+
+def _task_message(spec: DeviceSpec, prev: str, new: str, cause: str | None) -> str:
+    """Plain-language log line for an energy task moving from ``prev`` to ``new``.
+
+    ``cause`` is the scheduler branch that set this minute's power (``paused``,
+    ``wait_run``, ``wait_now``, ``lock_start``, ``deadline``, ``share``) or ``None``
+    when nothing in pass 2 touched the device (e.g. a water heater inside its min run).
+    """
+    if new == "done":
+        return "task complete — stopping"
+    if new == "over_limit":
+        return "deadline forces full power — exceeding limit (SIMULATED)"
+    if new == "off":
+        if cause == "wait_run":
+            return f"heating OFF — limit too tight to guarantee a full {spec.min_run_min}-min run"
+        if cause == "wait_now":
+            return "heating OFF — not enough headroom for full power"
+        return "paused to hold building under power limit"
+    if new == "throttled":
+        if prev in ("full", "over_limit"):
+            return "throttled to fit power limit"
+        return "resumed, throttled to fit power limit"
+    # new == "full"
+    if prev == "over_limit":
+        return "full power now fits under the limit"
+    if prev == "throttled":
+        return "back to full power — headroom available"
+    if spec.kind is DeviceKind.WATER_HEATER:
+        if cause == "lock_start":
+            return f"heating ON (min run {spec.min_run_min} min)"
+        if cause == "deadline":
+            return "heating ON — deadline requires full power"
+        return "heating ON"
+    return "resumed within available headroom"
+
+
 def _minutes_needed(remaining_kwh: float, max_kw: float) -> int:
     """Whole minutes of full-power run needed to deliver ``remaining_kwh``."""
     if remaining_kwh <= 0 or max_kw <= 0:
@@ -385,7 +440,11 @@ def run_coordinated(scenario: Scenario) -> RunResult:
     priority when the room nears the comfort limit; then allocates the remaining
     headroom to energy tasks in ascending slack order. A task whose slack has run
     out runs at full power even if that breaches the limit, and the breach is
-    logged. Minimum run times are honored. The log records only state changes.
+    logged once per contiguous episode. Minimum run times are honored.
+
+    The log records only state changes: each energy task's state (see
+    :func:`_task_state`) is compared with the previous minute's, and an entry is
+    written only when it differs. Logging never feeds back into scheduling.
     """
     states = _new_states(scenario)
     minutes: list[int] = []
@@ -396,6 +455,13 @@ def run_coordinated(scenario: Scenario) -> RunResult:
     room_c = scenario.thermal.start_c
     thermal = scenario.thermal
     ac_spec = _ac_spec(scenario)
+    task_kinds = (DeviceKind.EV, DeviceKind.WATER_HEATER)
+    # Last logged control state per energy task; a task with nothing to do starts done.
+    task_state: dict[str, str] = {
+        sid: ("done" if s.remaining_kwh() <= 0 else "off")
+        for sid, s in states.items()
+        if s.spec.kind in task_kinds
+    }
 
     def slack_of(s: DeviceState, now: int) -> int:
         """Minutes of spare time: time to deadline minus full-power minutes needed."""
@@ -423,6 +489,9 @@ def run_coordinated(scenario: Scenario) -> RunResult:
                         sid,
                         f"OFFLINE — holding last power {s.power_kw:.1f} kW, reserving headroom (SIMULATED)",
                     )
+                    # The OFFLINE line is this task's state-change entry.
+                    if sid in task_state and task_state[sid] != "done":
+                        task_state[sid] = "offline"
             if online:
                 s.last_update_min = m
 
@@ -474,6 +543,11 @@ def run_coordinated(scenario: Scenario) -> RunResult:
         ]
         startable.sort(key=lambda s: (slack_of(s, m), s.id))
 
+        # Which pass-2 branch set each task's power, and which tasks breached the limit.
+        # Read only by the decision log below; never by the scheduler.
+        cause: dict[str, str] = {}
+        breached: set[str] = set()
+
         for s in startable:
             spec = s.spec
             slack = slack_of(s, m)
@@ -483,12 +557,12 @@ def run_coordinated(scenario: Scenario) -> RunResult:
             if slack <= 0:
                 # Out of slack: run full power even if it breaches the limit (logged).
                 power = full
+                cause[s.id] = "deadline"
                 if power > headroom + 1e-9:
-                    _log(log, m, s.id, "deadline forces full power — exceeding limit (SIMULATED)")
+                    breached.add(s.id)
             elif headroom <= 1e-9:
                 power = 0.0
-                if s.power_kw > 0:
-                    _log(log, m, s.id, "paused to hold building under power limit")
+                cause[s.id] = "paused"
             else:
                 if spec.kind is DeviceKind.WATER_HEATER:
                     # On/off device: only start if the limit will hold for the WHOLE
@@ -507,19 +581,15 @@ def run_coordinated(scenario: Scenario) -> RunResult:
                     if fits_now and fits_run:
                         power = min(spec.max_kw, s.remaining_kwh() * 60.0)
                         s.run_remaining_min = max(0, spec.min_run_min - 1)
-                        _log(log, m, s.id, f"heating ON (min run {spec.min_run_min} min)")
+                        cause[s.id] = "lock_start"
                     else:
+                        # Too tight to guarantee the whole run; wait for a quieter window.
                         power = 0.0
-                        if not fits_run:
-                            # Too tight to guarantee the whole run; wait for a quieter window.
-                            pass
+                        cause[s.id] = "wait_now" if fits_run else "wait_run"
                 else:
                     # EV: continuously throttleable, absorbs remaining headroom.
                     power = min(full, headroom)
-                    if power < full - 1e-9 and s.power_kw >= full - 1e-9:
-                        _log(log, m, s.id, "throttled to fit power limit")
-                    elif s.power_kw == 0 and power > 0:
-                        _log(log, m, s.id, "resumed within available headroom")
+                    cause[s.id] = "share"
 
             s.power_kw = power
             committed += power
@@ -527,15 +597,20 @@ def run_coordinated(scenario: Scenario) -> RunResult:
         # ---- Commit energy + record series for every device (consistent order) ----
         for sid in per_device_kw:
             s = states[sid]
-            is_task = s.spec.kind in (DeviceKind.EV, DeviceKind.WATER_HEATER)
+            is_task = s.spec.kind in task_kinds
             if s.remaining_kwh() <= 0 and is_task and s.power_kw > 0:
-                _log(log, m, sid, "task complete — stopping")
                 s.power_kw = 0.0
             elif is_task and not s.online:
                 # An offline device stops on its own once its target is reached, so it
                 # never draws more than it still owes (the controller still reserved its
                 # full last power above, because it cannot see the device).
                 s.power_kw = min(s.power_kw, s.remaining_kwh() * 60.0)
+            if is_task:
+                # Log only when the task's control state differs from last minute's.
+                new_state = _task_state(s, sid in breached)
+                if new_state != task_state[sid]:
+                    _log(log, m, sid, _task_message(s.spec, task_state[sid], new_state, cause.get(sid)))
+                    task_state[sid] = new_state
             s.delivered_kwh += s.power_kw / 60.0
             per_device_kw[sid].append(s.power_kw)
 

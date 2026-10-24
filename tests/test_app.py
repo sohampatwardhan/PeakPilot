@@ -156,6 +156,44 @@ def test_ac_cycling_hidden_by_default_and_toggle_restores_it():
     assert len(full) > hidden_rows
 
 
+# --- Device status panel (R4.3, R5.4; issue #26) ----------------------------
+
+
+def _status(at: AppTest) -> dict:
+    df = next(d.value for d in at.dataframe if "Status" in d.value.columns)
+    return {row["Device"]: row for _, row in df.iterrows()}
+
+
+def _status_slider(at: AppTest):
+    return next(s for s in at.select_slider if s.label == "Status at")
+
+
+def test_offline_device_shows_offline_stale_by_default():
+    at = _run("EV offline 18:00–18:45")
+    assert _status_slider(at).format_func(_status_slider(at).value) == "18:00"
+    ev = _status(at)["ev-1"]
+    assert ev["Status"] == "OFFLINE / stale"
+    assert ev["Last update"] == "17:59"
+    held = engine.compare(scenarios.ev_offline()).coordinated.per_device_kw["ev-1"][120]
+    assert held > 0 and ev["Power kW"] == round(held, 2)
+    assert _status(at)["wh-1"]["Status"] == "online"
+
+
+def test_offline_device_reads_online_outside_its_window():
+    at = _run("EV offline 18:00–18:45")
+    _status_slider(at).set_value(180).run()  # 19:00, after reconnect
+    assert not at.exception
+    ev = _status(at)["ev-1"]
+    assert ev["Status"] == "online"
+    assert ev["Last update"] == "19:00"
+
+
+def test_status_panel_defaults_to_end_without_an_offline_window():
+    at = _run()
+    assert _status_slider(at).format_func(_status_slider(at).value) == "07:59"
+    assert all(row["Status"] == "online" for row in _status(at).values())
+
+
 # --- ML analysis panel (spec: .kiro/specs/ml-models, R1-R3) -----------------
 
 

@@ -143,24 +143,36 @@ def _temp_figure(cmp: engine.CompareResult) -> go.Figure:
     return fig
 
 
-def _device_status_rows(cmp: engine.CompareResult, scenario) -> pd.DataFrame:
-    """Per-device status at the end of the coordinated run (SIMULATED)."""
+def _default_status_minute(scenario) -> int:
+    """Minute the status panel opens on: the first offline minute, else 07:59.
+
+    Opening on an outage makes the stale reading visible without any clicks (R4.3).
+    """
+    starts = [d.offline_window[0] for d in scenario.devices if d.offline_window is not None]
+    return min(starts) if starts else engine.WINDOW_MINUTES - 1
+
+
+def _device_status_rows(cmp: engine.CompareResult, scenario, minute: int) -> pd.DataFrame:
+    """Per-device status at ``minute`` of the coordinated run (SIMULATED).
+
+    An offline device shows ``OFFLINE / stale`` with the last minute it reported, and
+    the power the controller assumes it is still holding.
+    """
     rows = []
-    last_min = scenario_last_minute = engine.WINDOW_MINUTES - 1
     for spec in scenario.devices:
         series = cmp.coordinated.per_device_kw[spec.id]
-        online = spec.is_online_at(last_min)
-        # Find the most recent minute the device was online (its last update).
-        last_update = last_min
-        while last_update > 0 and not spec.is_online_at(last_update):
+        online = spec.is_online_at(minute)
+        # Most recent minute the device reported (its last update), at or before `minute`.
+        last_update = minute
+        while last_update >= 0 and not spec.is_online_at(last_update):
             last_update -= 1
         rows.append(
             {
                 "Device": spec.id,
                 "Kind": spec.kind.value,
-                "Power kW (end)": round(series[last_min], 2),
+                "Power kW": round(series[minute], 2),
                 "Status": "online" if online else "OFFLINE / stale",
-                "Last update": engine.clock(last_update),
+                "Last update": engine.clock(last_update) if last_update >= 0 else "—",
                 "Commands": ", ".join(spec.commands),
             }
         )
@@ -485,7 +497,17 @@ with left:
 
 with right:
     st.subheader("Device status (SIMULATED)")
-    st.dataframe(_device_status_rows(cmp, scenario), use_container_width=True, hide_index=True)
+    status_minute = st.select_slider(
+        "Status at", options=list(range(engine.WINDOW_MINUTES)),
+        value=_default_status_minute(scenario), format_func=engine.clock,
+        help="Device readings at this minute of the coordinated run. Opens on the first "
+             "offline reading when the scenario has one, otherwise on 07:59.",
+    )
+    st.dataframe(_device_status_rows(cmp, scenario, status_minute), use_container_width=True, hide_index=True)
+    st.caption(
+        "An OFFLINE device cannot be read or commanded. Its power is the last commanded "
+        "value, which the controller assumes it still holds."
+    )
 
     # Per-device delivered energy.
     st.caption("Energy delivered per device (SIMULATED)")

@@ -37,8 +37,10 @@ app.py                 Streamlit dashboard (thin view over the engine)
 peakpilot/engine.py    simulation + least-slack-first scheduler (stdlib only)
 peakpilot/scenarios.py named reproducible scenarios + Scenario builder
 peakpilot/massgis.py   loads bundled MassGIS CSVs (no runtime network)
+peakpilot/optimal.py   perfect-foresight LP peak benchmark (SciPy; lower bound)
 data/                  bundled MassGIS CSVs + DATA.md provenance
 tests/                 pytest suite (engine correctness properties)
+tests/test_optimal.py  LP benchmark properties (bound, energy, comfort, reproducibility)
 .kiro/specs/peakpilot/ requirements.md, design.md, tasks.md
 .kiro/steering/        always-on project rules
 ```

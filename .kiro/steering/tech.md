@@ -9,6 +9,8 @@
 - **Dashboard:** Streamlit. Fastest route from a Python engine to an interactive, demo-ready UI.
 - **Charts:** Plotly (via Streamlit) for the demand and temperature charts.
 - **Data handling:** pandas for shaping MassGIS tables and simulation output for display.
+- **Optimal benchmark:** SciPy (`scipy.optimize.linprog`, HiGHS), pinned in `requirements.txt`.
+  Allowed in `peakpilot/optimal.py` only. `engine.py` stays standard library only.
 - **Tests:** pytest for engine correctness (energy accounting, limits, deadlines, infeasibility,
   reproducibility).
 
@@ -21,6 +23,7 @@ peakpilot/
   engine.py        # pure-stdlib simulation + scheduler (no UI imports)
   scenarios.py     # named, reproducible scenarios
   massgis.py       # loads bundled MassGIS CSVs, returns typed rows
+  optimal.py       # perfect-foresight LP peak benchmark (the only SciPy user)
 app.py             # Streamlit dashboard (imports engine, never redefines control logic)
 data/              # bundled MassGIS CSVs + a DATA.md provenance file
 tests/             # pytest suite

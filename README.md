@@ -21,7 +21,8 @@ streamlit run app.py
 The dashboard opens in your browser. In the sidebar, pick a **scenario**, set the
 **power limit** and device energy/deadlines, then read the before/after comparison.
 
-Run the engine tests (no dashboard needed — the engine is pure standard library):
+Run the tests (the engine is pure standard library; `tests/test_optimal.py` needs the
+SciPy pin from `requirements.txt`):
 
 ```bash
 pip install pytest
@@ -147,6 +148,27 @@ sequenceDiagram
     C->>C: resume normal control, log reconnect
 ```
 
+## How close to optimal?
+
+A separate dashboard panel compares the coordinated peak with the lowest peak any schedule
+could reach for the same scenario. `peakpilot/optimal.py` writes the scenario as one linear
+program over the same 960 one-minute steps and solves it with SciPy's HiGHS solver (about
+0.03 s per scenario). The LP must do the same work as the engine: every energy target by its
+deadline, device power limits, the offline hold, and the room at or below the comfort limit
+through the engine's own thermal model.
+
+The framing is deliberately cautious:
+
+- **Perfect foresight.** The LP knows the whole evening's base load and outdoor temperature
+  in advance. The scheduler decides minute by minute.
+- **Lower bound on achievable peak.** The LP lets the water heater and AC draw any power
+  between 0 and their maximum, while the engine switches them fully on or off with minimum
+  run times. A real schedule may not reach the bound.
+- **Infeasible means no number.** If no schedule can meet every deadline and the comfort
+  limit, the panel says so instead of showing a figure.
+- The gap is large on easy limits because PeakPilot aims to stay under the limit you set,
+  not to push the peak as low as possible. No cost or emissions claims follow from the gap.
+
 ## Massachusetts context
 
 PeakPilot adds a local planning layer from MassGIS (via the Hackachusetts climate portal). The user journey: **select a town → see its electricity context → simulate a building → compare coordinated vs. uncoordinated demand.**
@@ -214,8 +236,9 @@ app.py                  Streamlit dashboard (thin view over the engine)
 peakpilot/engine.py     simulation + least-slack-first scheduler (stdlib only)
 peakpilot/scenarios.py  named reproducible scenarios
 peakpilot/massgis.py    bundled MassGIS loader (no runtime network)
+peakpilot/optimal.py    perfect-foresight LP peak benchmark (SciPy)
 data/                   MassGIS CSVs + DATA.md provenance
-tests/                  pytest suite (engine correctness)
+tests/                  pytest suite (engine correctness + LP benchmark)
 .kiro/                  steering, specs, and the Kiro usage write-up
 docs/                   demo script + submission checklist
 ```

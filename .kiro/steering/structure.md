@@ -10,12 +10,14 @@ PeakPilot/
     engine.py             # pure-stdlib simulation + least-slack-first scheduler
     scenarios.py          # named reproducible scenarios + Scenario dataclass
     massgis.py            # loads bundled MassGIS CSVs into typed rows
+    optimal.py            # perfect-foresight LP peak benchmark (SciPy; lower bound)
   data/
     utilities.csv         # MassGIS: electric utility by town (bundled snapshot)
     landfills.csv         # MassGIS: renewables at MA landfills (bundled snapshot)
     DATA.md               # provenance: source URLs, retrieval date, units, missing values, terms
   tests/
     test_engine.py        # energy accounting, limits, deadlines, infeasibility, reproducibility
+    test_optimal.py       # LP bound <= coordinated peak, energy, comfort, limits, reproducibility
   .kiro/
     specs/peakpilot/      # requirements.md, design.md, tasks.md (spec planning)
     steering/             # product.md, tech.md, structure.md
@@ -33,6 +35,8 @@ PeakPilot/
 - `peakpilot/engine.py` is the single source of truth for control logic. Nothing else
   reimplements scheduling. The dashboard imports and calls it.
 - `engine.py` imports no third-party or UI libraries (stdlib only).
+- `optimal.py` is the only module that imports SciPy. It benchmarks a `Scenario`; it never
+  schedules what the dashboard shows as PeakPilot's behavior.
 - `massgis.py` reads only from bundled `data/*.csv`. No network calls at runtime.
 - Every public function and dataclass carries a docstring stating units and assumptions.
 

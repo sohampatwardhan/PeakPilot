@@ -10,3 +10,6 @@ rust/**/target/
 .coverage
 .coverage.*
 htmlcov/
+
+# Kiro CLI runtime lock files (the rest of .kiro/ must stay tracked for the hackathon)
+.kiro/settings/*.lock

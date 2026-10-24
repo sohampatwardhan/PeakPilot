@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Verify engine is dependency-free (stdlib only)
+        run: |
+          python - <<'PY'
+          # The engine must never import a third-party package. This guards rule 2
+          # in AGENTS.md: peakpilot/engine.py stays pure standard library.
+          import ast, sys, pathlib
+
+          third_party = {"streamlit", "pandas", "plotly", "numpy"}
+          src = pathlib.Path("peakpilot/engine.py").read_text()
+          tree = ast.parse(src)
+          bad = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  bad += [n.name.split(".")[0] for n in node.names if n.name.split(".")[0] in third_party]
+              elif isinstance(node, ast.ImportFrom) and node.module:
+                  root = node.module.split(".")[0]
+                  if root in third_party:
+                      bad.append(root)
+          if bad:
+              print(f"engine.py imports third-party packages: {sorted(set(bad))}")
+              sys.exit(1)
+          print("engine.py is stdlib-only: OK")
+          PY

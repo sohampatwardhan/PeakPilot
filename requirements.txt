@@ -1,0 +1,6 @@
+# PeakPilot runtime dependencies (pinned for a reproducible demo).
+# The simulation engine (peakpilot/engine.py) needs none of these — it is pure
+# standard library. These are only for the Streamlit dashboard.
+streamlit==1.40.2
+pandas==2.2.3
+plotly==5.24.1

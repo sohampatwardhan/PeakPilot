@@ -38,7 +38,7 @@ peakpilot/engine.py    simulation + least-slack-first scheduler (stdlib only)
 peakpilot/scenarios.py named reproducible scenarios + Scenario builder
 peakpilot/massgis.py   loads bundled MassGIS CSVs (no runtime network)
 data/                  bundled MassGIS CSVs + DATA.md provenance
-tests/                 pytest suite (engine correctness properties)
+tests/                 pytest suite (engine, scenarios, MassGIS, dashboard smoke)
 .kiro/specs/peakpilot/ requirements.md, design.md, tasks.md
 .kiro/steering/        always-on project rules
 ```

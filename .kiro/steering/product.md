@@ -37,4 +37,5 @@ and a room-temperature comfort constraint.
 
 In: one building, three devices (EV charger, water heater, air conditioner), one deterministic
 scheduler, two bundled MassGIS datasets, before/after comparison, decision log, offline-device
-scenario. Out: auth, custom electronics, live utility feeds, ML-based control, carbon/cost claims.
+scenario, and a perfect-foresight LP benchmark ("How close to optimal?") labeled as a lower bound
+on achievable peak. Out: auth, custom electronics, live utility feeds, ML-based control, carbon/cost claims.

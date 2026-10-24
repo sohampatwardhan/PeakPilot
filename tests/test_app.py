@@ -49,7 +49,11 @@ def test_every_scenario_renders(scenario_name):
     at = _run(scenario_name)
     assert at.sidebar.selectbox[0].value == scenario_name
     assert at.title[0].value == "PeakPilot"
-    assert len(at.metric) == 5
+    # 5 headline metrics + 3 in the "How close to optimal?" panel (every named
+    # scenario has a solvable benchmark).
+    assert len(at.metric) == 8
+    assert "How close to optimal? (SIMULATED)" in [s.value for s in at.subheader]
+    assert any(m.label == "Lower bound on achievable peak (kW)" for m in at.metric)
 
 
 def test_simulated_labels_present():

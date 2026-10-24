@@ -15,12 +15,22 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from peakpilot import engine, massgis, scenarios
+from peakpilot import engine, massgis, optimal, scenarios
 
 st.set_page_config(page_title="PeakPilot", page_icon="⚡", layout="wide")
 
 
 # --- Helpers ----------------------------------------------------------------
+
+
+@st.cache_data(hash_funcs={engine.Scenario: repr})
+def _benchmark(scenario: engine.Scenario, _coordinated: engine.RunResult) -> optimal.Benchmark:
+    """Cached perfect-foresight benchmark, keyed on every Scenario field.
+
+    ``_coordinated`` is left out of the key: it is a deterministic function of the
+    scenario, so the same scenario always pairs with the same coordinated run.
+    """
+    return optimal.benchmark(scenario, _coordinated)
 
 
 def _clock_series(result: engine.RunResult) -> list[str]:
@@ -206,6 +216,54 @@ st.plotly_chart(_demand_figure(cmp), use_container_width=True)
 
 st.subheader("Room temperature (SIMULATED, illustrative thermal model)")
 st.plotly_chart(_temp_figure(cmp), use_container_width=True)
+
+# Perfect-foresight benchmark — a separate panel, not part of the comparison above.
+bench = _benchmark(scenario, co)
+opt = bench.optimal
+with st.container(border=True):
+    st.subheader("How close to optimal? (SIMULATED)")
+    st.caption(
+        "A linear program with **perfect foresight** of the whole evening (it knows the base "
+        "load and outdoor temperature in advance) finds the lowest peak any schedule could "
+        "reach while doing the same work: every energy target by its deadline, device power "
+        "limits, the offline hold, and the room at or below the comfort limit."
+    )
+    if opt.status == "infeasible":
+        st.error(
+            "**No schedule meets every deadline and the comfort limit, even with perfect "
+            "foresight.** No benchmark number is shown for this scenario."
+        )
+    elif opt.status == "error":
+        st.error(f"The benchmark solver did not finish: {opt.message} No number is shown.")
+    else:
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Coordinated peak (kW)", f"{bench.coordinated_peak_kw:.2f}", help="PeakPilot's coordinated run (SIMULATED)")
+        m2.metric(
+            "Lower bound on achievable peak (kW)", f"{opt.peak_kw:.2f}",
+            help="No schedule can do the same work with a lower peak. A lower bound, not a schedule a device could necessarily follow.",
+        )
+        m3.metric("Gap (kW)", f"{bench.gap_kw:.2f}", f"{bench.gap_pct:.1f}% of coordinated peak", delta_color="off")
+        if not bench.limit_achievable:
+            st.warning(
+                f"The {bench.power_limit_kw:.1f} kW limit cannot be met even with perfect "
+                f"foresight: the lowest possible peak is {opt.peak_kw:.2f} kW."
+            )
+        if not bench.coordinated_comparable:
+            st.info(
+                "The coordinated run missed a deadline or the comfort limit, so it did different "
+                "work from the benchmark. This comparison is not like-for-like."
+            )
+        st.caption(
+            "PeakPilot aims to stay under the limit you set, not to push the peak as low as "
+            "possible, so a large gap on an easy limit is expected."
+        )
+    with st.expander("Why this is a lower bound on achievable peak"):
+        st.markdown("The benchmark relaxes rules the engine enforces:")
+        st.markdown("\n".join(f"- {r}" for r in opt.relaxations))
+    st.caption(
+        f"No cost or emissions claims: a lower peak does not by itself reduce energy or "
+        f"emissions. Solved in {opt.solve_time_s:.2f} s (SciPy HiGHS, 1-minute steps)."
+    )
 
 # Decision log + device status.
 left, right = st.columns([3, 2])

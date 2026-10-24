@@ -21,7 +21,8 @@ streamlit run app.py
 The dashboard opens in your browser. In the sidebar, pick a **scenario**, set the
 **power limit** and device energy/deadlines, then read the before/after comparison.
 
-Run the full test suite with coverage (what CI runs):
+Run the full test suite with coverage (what CI runs). The engine is pure standard
+library; `tests/test_optimal.py` needs the SciPy pin from `requirements.txt`:
 
 ```bash
 pip install -e ".[test]" -r requirements.txt
@@ -34,6 +35,7 @@ pytest -q --cov
 | `tests/test_scenarios.py` | named scenarios are well-formed and deterministic |
 | `tests/test_massgis.py` | bundled CSVs load offline, counts and dates match `data/DATA.md` |
 | `tests/test_app.py` | headless dashboard smoke test (Streamlit `AppTest`) for every scenario, including the SIMULATED and MassGIS source labels |
+| `tests/test_optimal.py` | LP benchmark properties (bound, energy, comfort, reproducibility) |
 
 CI fails if coverage of `peakpilot/` drops below 90%. With only `pip install pytest`,
 the engine, scenario and MassGIS tests still run and the dashboard test is skipped.
@@ -164,6 +166,27 @@ sequenceDiagram
     EV->>C: power + timestamp (online)
     C->>C: resume normal control, log reconnect
 ```
+
+## How close to optimal?
+
+A separate dashboard panel compares the coordinated peak with the lowest peak any schedule
+could reach for the same scenario. `peakpilot/optimal.py` writes the scenario as one linear
+program over the same 960 one-minute steps and solves it with SciPy's HiGHS solver (about
+0.03 s per scenario). The LP must do the same work as the engine: every energy target by its
+deadline, device power limits, the offline hold, and the room at or below the comfort limit
+through the engine's own thermal model.
+
+The framing is deliberately cautious:
+
+- **Perfect foresight.** The LP knows the whole evening's base load and outdoor temperature
+  in advance. The scheduler decides minute by minute.
+- **Lower bound on achievable peak.** The LP lets the water heater and AC draw any power
+  between 0 and their maximum, while the engine switches them fully on or off with minimum
+  run times. A real schedule may not reach the bound.
+- **Infeasible means no number.** If no schedule can meet every deadline and the comfort
+  limit, the panel says so instead of showing a figure.
+- The gap is large on easy limits because PeakPilot aims to stay under the limit you set,
+  not to push the peak as low as possible. No cost or emissions claims follow from the gap.
 
 ## Massachusetts context
 
@@ -306,10 +329,11 @@ app.py                  Streamlit dashboard (thin view over the engine)
 peakpilot/engine.py     simulation + least-slack-first scheduler (stdlib only)
 peakpilot/scenarios.py  named reproducible scenarios
 peakpilot/massgis.py    bundled MassGIS loader (no runtime network)
+peakpilot/optimal.py    perfect-foresight LP peak benchmark (SciPy)
 rust/peakpilot-core/    Rust port of the engine + CLI + Raspberry Pi Dockerfile
 scripts/parity_check.py Python vs Rust output comparison (run in CI)
 data/                   MassGIS CSVs + DATA.md provenance
-tests/                  pytest suite (engine, scenarios, MassGIS, dashboard smoke)
+tests/                  pytest suite (engine, scenarios, MassGIS, dashboard smoke, LP benchmark)
 .kiro/                  steering, specs, and the Kiro usage write-up
 docs/                   demo script + submission checklist
 ```

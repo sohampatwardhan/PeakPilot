@@ -11,6 +11,8 @@ Run with: ``streamlit run app.py``
 
 from __future__ import annotations
 
+import dataclasses
+
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -33,14 +35,14 @@ def _benchmark(scenario: engine.Scenario, _coordinated: engine.RunResult) -> opt
     return optimal.benchmark(scenario, _coordinated)
 
 
-# Deadline choices as hours since midnight of the first day: 17 → 17:00, 32 → 08:00
-# next morning. The window starts at 16:00, so deadline minutes = (hour - 16) * 60.
-_DEADLINE_HOURS = list(range(17, 33))
+# Deadline choices in minutes from 16:00, every half hour from 17:00 to 08:00, so a
+# scenario deadline such as the water heater's 06:30 (870) is offered exactly.
+_DEADLINE_MINUTES = list(range(60, engine.WINDOW_MINUTES + 1, 30))
 
 
-def _hour_label(hour: int) -> str:
-    """Clock label for a deadline hour that may run past midnight (e.g. 31 → 07:00)."""
-    return f"{hour % 24:02d}:00"
+def _deadline_option(minute: int) -> int:
+    """Nearest offered deadline to ``minute`` (named scenarios are already on the grid)."""
+    return min(_DEADLINE_MINUTES, key=lambda m: abs(m - minute))
 
 
 # AC comfort-control toggles. They fire every few minutes on a warm evening and
@@ -165,35 +167,33 @@ power_limit = st.sidebar.slider(
 st.sidebar.subheader("EV charger (SIMULATED)")
 ev_spec = next(d for d in base_scenario.devices if d.kind is engine.DeviceKind.EV)
 ev_kwh = st.sidebar.slider("EV energy needed (kWh)", 5.0, 60.0, float(ev_spec.target_kwh), 1.0, format="%.0f")
-ev_deadline_h = st.sidebar.select_slider(
-    "EV deadline", options=_DEADLINE_HOURS,
-    value=16 + ev_spec.deadline_min // 60, format_func=_hour_label,
+ev_deadline_min = st.sidebar.select_slider(
+    "EV deadline", options=_DEADLINE_MINUTES,
+    value=_deadline_option(ev_spec.deadline_min), format_func=engine.clock,
 )
 
 st.sidebar.subheader("Water heater (SIMULATED)")
 wh_spec = next(d for d in base_scenario.devices if d.kind is engine.DeviceKind.WATER_HEATER)
 wh_kwh = st.sidebar.slider("Water-heater energy (kWh)", 2.0, 20.0, float(wh_spec.target_kwh), 1.0, format="%.0f")
-wh_deadline_h = st.sidebar.select_slider(
-    "Water-heater deadline", options=_DEADLINE_HOURS,
-    value=16 + wh_spec.deadline_min // 60, format_func=_hour_label,
+wh_deadline_min = st.sidebar.select_slider(
+    "Water-heater deadline", options=_DEADLINE_MINUTES,
+    value=_deadline_option(wh_spec.deadline_min), format_func=engine.clock,
 )
 
 st.sidebar.subheader("Massachusetts context")
 town = st.sidebar.selectbox("Town (MassGIS)", massgis.towns(), index=massgis.towns().index("Boston") if "Boston" in massgis.towns() else 0)
 
-# Reconstruct a scenario from the (possibly overridden) inputs, preserving the
-# chosen scenario's environment and any offline window.
-ev_offline = ev_spec.offline_window
-scenario = scenarios.custom_scenario(
-    name=chosen,
-    power_limit_kw=power_limit,
+# Override only what the sidebar controls (limit, energy, deadlines). The chosen
+# scenario keeps its own environment: base load, outdoor temperature (Infeasible is a
+# 34 °C evening), thermal model, note and EV offline window.
+devices = scenarios.custom_scenario(
     ev_kwh=ev_kwh,
-    ev_deadline_min=(ev_deadline_h - 16) * 60,
+    ev_deadline_min=ev_deadline_min,
     wh_kwh=wh_kwh,
-    wh_deadline_min=(wh_deadline_h - 16) * 60,
-    ev_offline=ev_offline,
-    note=base_scenario.note,
-)
+    wh_deadline_min=wh_deadline_min,
+    ev_offline=ev_spec.offline_window,
+).devices
+scenario = dataclasses.replace(base_scenario, name=chosen, power_limit_kw=power_limit, devices=devices)
 
 cmp = engine.compare(scenario)
 b, co = cmp.baseline, cmp.coordinated

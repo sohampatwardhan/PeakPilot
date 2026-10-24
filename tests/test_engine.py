@@ -146,3 +146,25 @@ def test_metrics_present():
     for key in ("peak_kw", "total_kwh", "per_device_kwh", "tasks_met", "minutes_over_limit"):
         assert key in j["coordinated"]
     assert j["peak_reduction_pct"] >= 0
+
+
+# --- Regressions found by the Rust property tests ---------------------------
+
+
+def test_late_delivery_does_not_count_as_meeting_the_deadline():
+    """60 kWh by 17:00 is impossible at 7.2 kW; finishing later must be reported as unmet."""
+    s = scenarios.custom_scenario(ev_kwh=60.0, ev_deadline_min=60)
+    for run in (engine.compare(s).baseline, engine.compare(s).coordinated):
+        assert run.tasks_met["ev-1"] is False
+        by_deadline = sum(run.per_device_kw["ev-1"][:60]) / 60.0
+        assert math.isclose(run.unmet_kwh["ev-1"], 60.0 - by_deadline, abs_tol=1e-9)
+
+
+def test_offline_device_never_draws_past_its_target():
+    """A small EV charge finishing during an outage must stop at its target."""
+    s = scenarios.custom_scenario(ev_kwh=5.0, ev_offline=(20, 140))
+    run = engine.compare(s).coordinated
+    assert run.per_device_kwh["ev-1"] <= 5.0 + 1e-6
+    for m in range(WINDOW_MINUTES):
+        drawn = sum(series[m] for series in run.per_device_kw.values())
+        assert math.isclose(run.total_kw[m], s.base_load[m] + drawn, abs_tol=1e-9)

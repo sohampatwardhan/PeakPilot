@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a82efbfb42abb481bce30ab9a874b2d6caa3e6a9b09a32c9fe1da287a346d67a # shrinks to p = ScenarioParams { name: "generated", power_limit_kw: 8.0, ev_kwh: 5.0, ev_deadline_min: 60, wh_kwh: 17.971522720223664, wh_deadline_min: 60, peak_outdoor_c: 25.0, ev_offline: None, note: "" }
+cc e6d7631f111f1e87ab965e8fd45528f26111cbc49002815de3c684626b654ad2 # shrinks to p = ScenarioParams { name: "generated", power_limit_kw: 14.047272247389623, ev_kwh: 56.70516532523108, ev_deadline_min: 60, wh_kwh: 2.0, wh_deadline_min: 60, peak_outdoor_c: 25.0, ev_offline: Some((372, 473)), note: "" }

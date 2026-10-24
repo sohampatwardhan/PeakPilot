@@ -280,7 +280,13 @@ def _finalize(
     for sid, s in states.items():
         if s.spec.target_kwh is None:
             continue
-        unmet = s.remaining_kwh()
+        # A deadline is met only by energy drawn before it. Energy delivered after the
+        # deadline still shows in per_device_kwh but does not count as meeting the task.
+        assert s.spec.deadline_min is not None
+        by_deadline = 0.0
+        for p in per_device_kw[sid][: s.spec.deadline_min]:
+            by_deadline += p / 60.0
+        unmet = max(0.0, s.spec.target_kwh - by_deadline)
         unmet_kwh[sid] = unmet
         tasks_met[sid] = unmet <= 1e-6
     minutes_over_limit = sum(1 for v in total_kw if v > scenario.power_limit_kw + 1e-9)
@@ -521,14 +527,22 @@ def run_coordinated(scenario: Scenario) -> RunResult:
         # ---- Commit energy + record series for every device (consistent order) ----
         for sid in per_device_kw:
             s = states[sid]
-            if s.remaining_kwh() <= 0 and s.spec.kind in (DeviceKind.EV, DeviceKind.WATER_HEATER) and s.power_kw > 0:
+            is_task = s.spec.kind in (DeviceKind.EV, DeviceKind.WATER_HEATER)
+            if s.remaining_kwh() <= 0 and is_task and s.power_kw > 0:
                 _log(log, m, sid, "task complete — stopping")
                 s.power_kw = 0.0
+            elif is_task and not s.online:
+                # An offline device stops on its own once its target is reached, so it
+                # never draws more than it still owes (the controller still reserved its
+                # full last power above, because it cannot see the device).
+                s.power_kw = min(s.power_kw, s.remaining_kwh() * 60.0)
             s.delivered_kwh += s.power_kw / 60.0
             per_device_kw[sid].append(s.power_kw)
 
         minutes.append(m)
-        total_kw.append(committed)
+        # Report what the building actually drew. `committed` is the controller's plan,
+        # which can include headroom reserved for an offline device that has stopped.
+        total_kw.append(sum(s.power_kw for s in states.values()) + scenario.base_load[m])
         room_series.append(room_c)
         room_c = _step_room_temp(room_c, scenario.outdoor_c[m], cooling_kw, thermal)
 

@@ -62,6 +62,10 @@ The dashboard is a thin view. All control logic lives in a pure-standard-library
 so the same engine could drive a different front end or real devices later.
 
 ```mermaid
+---
+config:
+  layout: elk
+---
 flowchart LR
     subgraph UI["Streamlit dashboard (app.py)"]
         SB["Sidebar: scenario,\npower limit, device knobs, town"]
@@ -101,6 +105,10 @@ The controller uses **least-slack-first** scheduling. Each task's slack is the t
 Each one-minute step runs a two-pass allocation: commit the loads that cannot be throttled this minute, then distribute whatever headroom remains to the flexible tasks by slack.
 
 ```mermaid
+---
+config:
+  layout: elk
+---
 flowchart TD
     START["New minute"] --> ONLINE["Refresh online/offline state"]
     ONLINE --> P1["Pass 1 — commit forced loads:\nbase load, offline holds,\nAC priority if room near comfort,\nwater heater mid min-run"]
@@ -207,6 +215,80 @@ And deliberately excludes:
 - **Offline handling is an explicit assumption:** an offline device is assumed to hold its
   last commanded power, and that assumption is disclosed in the decision log.
 
+## Rust engine for the Raspberry Pi
+
+A load controller like this would run on a small computer inside the building, not on a
+laptop. `rust/peakpilot-core` is a port of the Python engine to Rust that compiles to a
+single static binary for a Raspberry Pi 4 or 5 (64-bit Raspberry Pi OS). It has no garbage
+collector and needs no runtime on the device. The scheduling code uses only Rust's standard
+library; `serde` is used only to write JSON.
+
+The Python engine is the reference. CI runs both engines on every named scenario plus 100
+seeded random variations and compares the full JSON output: every per-minute value, every
+metric, every decision-log line. They currently match exactly on all 104 cases. Getting
+identical numbers required reproducing Python's compensated float `sum()` in Rust.
+
+```mermaid
+---
+config:
+  layout: elk
+---
+flowchart LR
+    PY["Python engine\n(reference)"] --> PAR{"parity check:\n104 cases,\nidentical JSON?"}
+    RS["Rust engine\n(peakpilot-core)"] --> PAR
+    RS --> BIN["static arm64 binary\nin a 0.8 MB image"]
+    BIN --> PI["Raspberry Pi 4 / 5"]
+    PY --> UI["Streamlit dashboard"]
+```
+
+### Run it
+
+```bash
+cd rust/peakpilot-core
+cargo run --release -- list
+cargo run --release -- run --scenario hot_evening --table
+cargo run --release -- run --scenario hot_evening --limit 12 --ev-kwh 40   # JSON out
+```
+
+### Build the Raspberry Pi image
+
+```bash
+docker buildx build --platform linux/arm64 -t peakpilot:arm64 --load rust/peakpilot-core
+docker run --rm peakpilot:arm64 run --scenario hot_evening --table
+```
+
+The image holds only the binary (built on `scratch`) and runs as an unprivileged user.
+Building on an arm64 machine compiles natively; on an x86 machine Docker emulates arm64,
+which is slower. To get just the binary for copying onto a Pi:
+
+```bash
+docker buildx build --platform linux/arm64 --output type=local,dest=dist rust/peakpilot-core
+scp dist/peakpilot pi@raspberrypi.local:~/
+```
+
+**Verification status:** the arm64 image has been built and run on an Apple silicon Mac and
+is built and smoke-tested in CI on a GitHub arm64 runner. It has **not** been run on a
+physical Raspberry Pi. The Pi 4 and 5 both use 64-bit Arm cores, so the same image should
+run on either.
+
+### Testing
+
+- **Property-based tests** (`proptest`, 256 generated scenarios per property) check that
+  power stays within each device's rating, delivered energy equals the integral of the
+  power series, deadlines count only energy delivered before them, the building total
+  equals base load plus device draw, and identical inputs give identical results.
+- **Scenario tests** mirror the Python suite on the four named scenarios.
+
+The property tests found two bugs that also existed in the Python engine; both are fixed
+in both engines:
+
+1. A task was marked "met" if its energy arrived by 08:00, even when it missed its own
+   deadline. Now only energy delivered before the deadline counts, and the rest is
+   reported as unmet.
+2. A device that went offline kept drawing power after reaching its target, and the
+   reported building total included the headroom the controller had reserved for it.
+   Now an offline device stops at its target, and the total reports actual draw.
+
 ## Project structure
 
 ```
@@ -214,6 +296,8 @@ app.py                  Streamlit dashboard (thin view over the engine)
 peakpilot/engine.py     simulation + least-slack-first scheduler (stdlib only)
 peakpilot/scenarios.py  named reproducible scenarios
 peakpilot/massgis.py    bundled MassGIS loader (no runtime network)
+rust/peakpilot-core/    Rust port of the engine + CLI + Raspberry Pi Dockerfile
+scripts/parity_check.py Python vs Rust output comparison (run in CI)
 data/                   MassGIS CSVs + DATA.md provenance
 tests/                  pytest suite (engine correctness)
 .kiro/                  steering, specs, and the Kiro usage write-up

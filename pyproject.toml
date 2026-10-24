@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "peakpilot"
+version = "0.1.0"
+description = "Massachusetts-aware building energy demand-coordination simulator (Hackachusetts 2026)."
+readme = "README.md"
+requires-python = ">=3.11"
+# The simulation engine (peakpilot/engine.py) is pure standard library and needs
+# no install-time dependencies. The dashboard deps live in requirements.txt.
+dependencies = []
+
+[project.optional-dependencies]
+dashboard = ["streamlit==1.40.2", "pandas==2.2.3", "plotly==5.24.1"]
+test = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["peakpilot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

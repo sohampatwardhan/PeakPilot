@@ -27,8 +27,10 @@ jobs:
           pip install -e ".[test]"
           pip install -r requirements.txt
 
-      - name: Run tests
-        run: pytest -q
+      - name: Run tests with coverage
+        # Includes the headless dashboard smoke test (tests/test_app.py). Coverage
+        # settings and the fail_under threshold live in pyproject.toml.
+        run: pytest -q -rs --cov --cov-report=term-missing
 
       - name: Verify engine is dependency-free (stdlib only)
         run: |

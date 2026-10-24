@@ -1,0 +1,46 @@
+//! Example-based tests on the four named scenarios, mirroring `tests/test_engine.py`.
+
+use peakpilot_core::{engine, scenarios};
+
+#[test]
+fn hot_evening_holds_the_limit_and_meets_every_deadline() {
+    let c = engine::compare(&scenarios::hot_evening());
+    assert_eq!(c.coordinated.minutes_over_limit, 0);
+    assert!(c.coordinated.peak_kw <= c.power_limit_kw + 1e-6);
+    assert!(c.coordinated.all_tasks_met());
+    assert!(c.peak_reduction_pct() > 0.0);
+}
+
+#[test]
+fn tight_limit_still_holds() {
+    let c = engine::compare(&scenarios::tight_limit());
+    assert_eq!(c.coordinated.minutes_over_limit, 0);
+    assert!(c.coordinated.all_tasks_met());
+}
+
+#[test]
+fn infeasible_scenario_reports_a_violation() {
+    let r = engine::compare(&scenarios::infeasible()).coordinated;
+    assert!(
+        r.minutes_over_limit > 0 || r.temp_violation_min > 0,
+        "an infeasible scenario must surface a power or comfort violation"
+    );
+}
+
+#[test]
+fn offline_ev_is_disclosed_and_recovers() {
+    let r = engine::compare(&scenarios::ev_offline()).coordinated;
+    let log: Vec<&str> = r.decision_log.iter().map(|d| d.message.as_str()).collect();
+    assert!(log.iter().any(|m| m.contains("OFFLINE")));
+    assert!(log.iter().any(|m| m.contains("reconnected")));
+    assert!(*r.tasks_met.get("ev-1").unwrap());
+}
+
+#[test]
+fn every_named_scenario_resolves_by_slug() {
+    for s in scenarios::all() {
+        let params = scenarios::params_for(s.slug).expect("slug resolves");
+        assert_eq!(params, (s.params)());
+    }
+    assert!(scenarios::params_for("no_such_scenario").is_none());
+}

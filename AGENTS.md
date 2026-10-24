@@ -39,7 +39,7 @@ peakpilot/scenarios.py named reproducible scenarios + Scenario builder
 peakpilot/massgis.py   loads bundled MassGIS CSVs (no runtime network)
 peakpilot/optimal.py   perfect-foresight LP peak benchmark (SciPy; lower bound)
 data/                  bundled MassGIS CSVs + DATA.md provenance
-tests/                 pytest suite (engine correctness properties)
+tests/                 pytest suite (engine, scenarios, MassGIS, dashboard smoke)
 tests/test_optimal.py  LP benchmark properties (bound, energy, comfort, reproducibility)
 .kiro/specs/peakpilot/ requirements.md, design.md, tasks.md
 .kiro/steering/        always-on project rules
@@ -60,6 +60,14 @@ pip install -r requirements.txt
 pytest -q            # engine correctness — must stay green
 streamlit run app.py # dashboard
 ```
+
+## How changes land
+
+New tasks and major changes follow: GitHub issue → Kiro spec under
+`.kiro/specs/<feature>/` → branch from `main` → PR with `Closes #<issue>` → merge
+when CI is green and the user confirms. Small fixes skip the spec but still use an
+issue, a branch, and a PR. Nothing is committed directly to `main`. Full rules:
+`.kiro/steering/workflow.md`.
 
 ## Definition of done for a change
 

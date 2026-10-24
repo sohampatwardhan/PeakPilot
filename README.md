@@ -143,7 +143,7 @@ Design principles:
 - **Honest infeasibility.** When a limit cannot be met (for example, the AC must run to keep the room comfortable), the controller reports the minutes over the limit instead of hiding them.
 - **Equipment-realistic behavior.** The water heater and air conditioner honor minimum run times so relays don't cycle every minute.
 - **IoT failure handling.** When a device goes offline, the controller can't command it, assumes it holds its last power level, reserves that headroom, and defers other loads until it reconnects. A stale reading visibly changes the device's status.
-- **Same work, lower peak.** Both runs deliver the same total energy, so peak reduction never comes from skipping work. A lower peak achieved by leaving tasks unfinished counts as a failure, not a win.
+- **Same work, lower peak.** Both runs deliver the same EV and water-heater energy, so peak reduction never comes from skipping work. AC energy can differ because coordination changes when the room is cooled (Hot evening: 12.25 kWh coordinated vs 11.08 kWh baseline). A lower peak achieved by leaving tasks unfinished counts as a failure, not a win.
 
 ### Offline device handling
 

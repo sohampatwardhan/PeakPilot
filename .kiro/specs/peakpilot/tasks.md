@@ -24,7 +24,8 @@ Three increments, matching the build brief. Each task traces to requirements.
 - [x] 2.3 Room-temperature chart. _Requirements: 5.2_
 - [ ] 2.4 Decision-log table + per-device status panel with OFFLINE/stale. _Requirements: 4.3, 5.4_
   - Open: the status panel shows the 08:00 snapshot only, so the EV offline window
-    (18:00–18:45) never appears as OFFLINE/stale there (R4.3).
+    (18:00–18:45) never appears as OFFLINE/stale there (R4.3). Fix on
+    `fix/device-status-offline`, issue #26.
 - [x] 2.5 SIMULATED labels throughout; reset control. _Requirements: 5.5, 5.6_
 
 ## Increment 3 — MassGIS context, provenance, polish, submission
@@ -33,9 +34,11 @@ Three increments, matching the build brief. Each task traces to requirements.
 - [x] 3.2 `massgis.py` loader returning typed rows (blanks preserved). _Requirements: 6.1, 6.2_
 - [x] 3.3 Town panel: utility + landfill projects, with source/date caption and honesty notes. _Requirements: 6.1, 6.2, 6.4_
 - [ ] 3.4 `requirements.txt` (pinned), README demo steps/limitations/attribution. _Requirements: 7.1, 7.3_
-  - Open: README says the device panel marks the charger OFFLINE (see 2.4) and that both
-    runs deliver the same total energy (EV and water heater match; AC kWh differs).
+  - The "same total energy" claim is corrected on this branch (EV and water heater match;
+    AC kWh differs). Open: README says the device panel marks the charger OFFLINE, which
+    becomes true when #26 merges.
 - [ ] 3.5 `.kiro/KIRO_USAGE.md`, `docs/DEMO_SCRIPT.md` (≤2:30), `docs/SUBMISSION_CHECKLIST.md`. _Requirements: 7.2, 7.4_
-  - Open: demo click step 4 points at an OFFLINE device row that is not shown (see 2.4).
+  - Open: demo click step 4 points at an OFFLINE device row, which appears once #26 merges.
+    `KIRO_USAGE.md` now lists all four steering docs.
 - [ ] 3.6 Final verification run of tests + app smoke check; commit. _Requirements: 7.1_
   - Open until 1.4, 2.4, 3.4 and 3.5 land.

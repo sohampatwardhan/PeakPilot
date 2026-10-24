@@ -33,6 +33,25 @@ def _benchmark(scenario: engine.Scenario, _coordinated: engine.RunResult) -> opt
     return optimal.benchmark(scenario, _coordinated)
 
 
+# Deadline choices as hours since midnight of the first day: 17 → 17:00, 32 → 08:00
+# next morning. The window starts at 16:00, so deadline minutes = (hour - 16) * 60.
+_DEADLINE_HOURS = list(range(17, 33))
+
+
+def _hour_label(hour: int) -> str:
+    """Clock label for a deadline hour that may run past midnight (e.g. 31 → 07:00)."""
+    return f"{hour % 24:02d}:00"
+
+
+# AC comfort-control toggles. They fire every few minutes on a warm evening and
+# would otherwise bury the EV and water-heater decisions in the log.
+_AC_CYCLING_PREFIXES = ("cooling ON", "cooling OFF")
+
+
+def _is_ac_cycling(row: dict) -> bool:
+    return row["message"].startswith(_AC_CYCLING_PREFIXES)
+
+
 def _clock_series(result: engine.RunResult) -> list[str]:
     return [engine.clock(m) for m in result.minutes]
 
@@ -140,18 +159,24 @@ base_scenario = scenarios.scenarios()[chosen]()
 st.sidebar.subheader("Building power limit")
 power_limit = st.sidebar.slider(
     "Limit (kW)", min_value=8.0, max_value=20.0,
-    value=float(base_scenario.power_limit_kw), step=0.5,
+    value=float(base_scenario.power_limit_kw), step=0.5, format="%.1f",
 )
 
 st.sidebar.subheader("EV charger (SIMULATED)")
 ev_spec = next(d for d in base_scenario.devices if d.kind is engine.DeviceKind.EV)
-ev_kwh = st.sidebar.slider("EV energy needed (kWh)", 5.0, 60.0, float(ev_spec.target_kwh), 1.0)
-ev_deadline_h = st.sidebar.slider("EV deadline (hour)", 17, 32, 16 + ev_spec.deadline_min // 60)
+ev_kwh = st.sidebar.slider("EV energy needed (kWh)", 5.0, 60.0, float(ev_spec.target_kwh), 1.0, format="%.0f")
+ev_deadline_h = st.sidebar.select_slider(
+    "EV deadline", options=_DEADLINE_HOURS,
+    value=16 + ev_spec.deadline_min // 60, format_func=_hour_label,
+)
 
 st.sidebar.subheader("Water heater (SIMULATED)")
 wh_spec = next(d for d in base_scenario.devices if d.kind is engine.DeviceKind.WATER_HEATER)
-wh_kwh = st.sidebar.slider("Water-heater energy (kWh)", 2.0, 20.0, float(wh_spec.target_kwh), 1.0)
-wh_deadline_h = st.sidebar.slider("Water-heater deadline (hour)", 17, 32, 16 + wh_spec.deadline_min // 60)
+wh_kwh = st.sidebar.slider("Water-heater energy (kWh)", 2.0, 20.0, float(wh_spec.target_kwh), 1.0, format="%.0f")
+wh_deadline_h = st.sidebar.select_slider(
+    "Water-heater deadline", options=_DEADLINE_HOURS,
+    value=16 + wh_spec.deadline_min // 60, format_func=_hour_label,
+)
 
 st.sidebar.subheader("Massachusetts context")
 town = st.sidebar.selectbox("Town (MassGIS)", massgis.towns(), index=massgis.towns().index("Boston") if "Boston" in massgis.towns() else 0)
@@ -186,10 +211,33 @@ if scenario.note:
     st.info(scenario.note)
 
 # Metric cards.
+# Split energy into the deadline tasks (EV + water heater, which must match the
+# baseline) and AC runtime (which legitimately differs between runs).
+ac_ids = {d.id for d in scenario.devices if d.kind is engine.DeviceKind.AIR_CONDITIONER}
+task_kwh_co = sum(v for k, v in co.per_device_kwh.items() if k not in ac_ids)
+task_kwh_b = sum(v for k, v in b.per_device_kwh.items() if k not in ac_ids)
+ac_kwh_co = sum(v for k, v in co.per_device_kwh.items() if k in ac_ids)
+ac_kwh_b = sum(v for k, v in b.per_device_kwh.items() if k in ac_ids)
+energy_diff = co.total_kwh - b.total_kwh
+tasks_match = abs(task_kwh_co - task_kwh_b) < 0.05
+if abs(energy_diff) < 0.05:
+    energy_delta = "same as baseline"
+elif tasks_match:
+    energy_delta = f"{energy_diff:+.1f} kWh, AC runtime"
+else:
+    energy_delta = f"{energy_diff:+.1f} kWh vs baseline"
+energy_help = (
+    f"Total energy in the coordinated run. Baseline: {b.total_kwh:.1f} kWh. "
+    f"EV + water heater: {task_kwh_co:.1f} kWh (baseline {task_kwh_b:.1f}). "
+    f"AC: {ac_kwh_co:.1f} kWh (baseline {ac_kwh_b:.1f}). "
+    "The deadline tasks should match the baseline; AC runtime can differ because "
+    "coordination changes when the room is cooled."
+)
+
 c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Coordinated peak", f"{co.peak_kw:.1f}", f"-{cmp.peak_reduction_pct:.0f}% vs base", delta_color="inverse", help="Peak building demand in kW under PeakPilot")
-c2.metric("Baseline peak", f"{b.peak_kw:.1f}", help="Peak demand in kW with no coordination")
-c3.metric("Energy (kWh)", f"{co.total_kwh:.0f}", f"{co.total_kwh - b.total_kwh:+.1f}", help="Total energy delivered; should match the baseline (same work)")
+c1.metric("Coordinated peak", f"{co.peak_kw:.1f} kW", f"-{cmp.peak_reduction_pct:.0f}% vs base", delta_color="inverse", help="Peak building demand under PeakPilot")
+c2.metric("Baseline peak", f"{b.peak_kw:.1f} kW", help="Peak demand with no coordination")
+c3.metric("Energy delivered", f"{co.total_kwh:.0f} kWh", energy_delta, delta_color="off" if tasks_match else "normal", help=energy_help)
 c4.metric("Min over limit", f"{co.minutes_over_limit}", f"{co.minutes_over_limit - b.minutes_over_limit:+d}", delta_color="inverse", help="Minutes the coordinated run exceeds the power limit")
 tasks_label = "✓ all" if co.all_tasks_met() else "✗ unmet"
 c5.metric("Deadlines", tasks_label, help="Whether every energy task met its deadline")
@@ -271,8 +319,19 @@ with left:
     st.subheader("Decision log (coordinated)")
     st.caption("Plain-language reason for each control change. SIMULATED.")
     log_rows = [d.as_row() for d in co.decision_log]
-    if log_rows:
-        st.dataframe(pd.DataFrame(log_rows), height=300, use_container_width=True, hide_index=True)
+    n_cycling = sum(1 for r in log_rows if _is_ac_cycling(r))
+    show_cycling = False
+    if n_cycling:
+        show_cycling = st.toggle(
+            f"Show AC on/off cycling ({n_cycling} entries)", value=False,
+            help="The AC switches on and off to hold the room near the comfort limit. "
+                 "Hidden by default so the EV and water-heater decisions stand out.",
+        )
+    shown = log_rows if show_cycling else [r for r in log_rows if not _is_ac_cycling(r)]
+    if shown:
+        st.dataframe(pd.DataFrame(shown), height=300, use_container_width=True, hide_index=True)
+    elif log_rows:
+        st.write("Only AC on/off cycling was logged. Use the toggle above to show it.")
     else:
         st.write("No state changes logged.")
 

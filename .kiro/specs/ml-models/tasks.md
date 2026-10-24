@@ -8,7 +8,8 @@ branch. The rest are the implementation plan.
 - [x] 1 Run the studies and commit them as evidence: `studies/s1_thermal_id.py`, `studies/s2_forecast_value.py`,
   `studies/s3_matlab_parity.m`, `studies/results/*`, and the executed `studies/ml_studies.ipynb` with pinned
   `studies/requirements.txt`. _Requirements: Summary, 5.1_
-- [ ] 2 After PR #14 merges, rebase `feat/ml-models` on `main`. _Design: Risks_
+- [x] 2 After PR #14 merges, bring `feat/ml-models` up to date with `main` (merged `5f234a3`, no force push).
+  _Design: Risks_
 - [ ] 3 Add `ReactiveFloor` and `reactive_floor()` to `optimal.py` (full-grid scan, `monotone` flag), and add
   `floor`, `headroom_kw` and `headroom_pct` to `Benchmark`. Measure the time for every named scenario.
   _Requirements: 1.1–1.3, 1.5_

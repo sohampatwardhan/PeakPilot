@@ -32,6 +32,13 @@ flowchart LR
     MAT -.->|"pyenv: py.peakpilot.engine"| ENG
 ```
 
+### Deployment boundary
+
+The Raspberry Pi image (`rust/peakpilot-core/Dockerfile`, CI job "Raspberry Pi 4/5 image") simulates what would
+run on the Pi. Its build context is that folder alone, and the runtime image is `scratch` with one static binary.
+Nothing in this feature goes there (R4.5). The studies under `studies/` are research run on the development
+machine. `learn.py` and the panel additions are part of the Python dashboard. The CI image job needs no change.
+
 ## Research: what each tool offers for ML here
 
 ### SciPy 1.17.1 (already pinned)
@@ -62,7 +69,7 @@ uses only `mldivide` and `lsqnonlin`, which any MATLAB with the Optimization Too
 | Compiler SDK Python package + MATLAB Runtime | No, but needs a multi-GB Runtime matching the release; academic-licence redistribution unclear | Reject |
 | MATLAB Engine API (`matlabengine` 26.2.x, Python 3.10–3.14) at runtime | Yes, licensed | Reject: breaks "free of charge, without restriction" |
 | MATLAB calling Python (`pyenv`, `py.peakpilot.engine`) | No (dev only) | **Keep** as the cross-check: MATLAB drives the real engine, so there is still one source of truth |
-| MATLAB Coder → C for `predict` (needs Statistics and ML + Coder) | No | Future edge-device option (ties to the Rust port story); out of scope |
+| MATLAB Coder → C for `predict` (needs Statistics and ML + Coder) | No | Not planned: the Pi runs only the Rust engine, and no learned model goes there (R4.5) |
 | GNU Octave + oct2py | No | Has `fitlm`/`fitrgp` (statistics pkg 2.0.1) and `arx`, but no `greyest`/`ssest`; not needed |
 
 Sources: MathWorks Python compatibility table, Engine API install docs, MATLAB Runtime and Compiler support pages,

@@ -21,12 +21,22 @@ streamlit run app.py
 The dashboard opens in your browser. In the sidebar, pick a **scenario**, set the
 **power limit** and device energy/deadlines, then read the before/after comparison.
 
-Run the engine tests (no dashboard needed — the engine is pure standard library):
+Run the full test suite with coverage (what CI runs):
 
 ```bash
-pip install pytest
-pytest -q
+pip install -e ".[test]" -r requirements.txt
+pytest -q --cov
 ```
+
+| File | Covers |
+|---|---|
+| `tests/test_engine.py` | engine correctness properties |
+| `tests/test_scenarios.py` | named scenarios are well-formed and deterministic |
+| `tests/test_massgis.py` | bundled CSVs load offline, counts and dates match `data/DATA.md` |
+| `tests/test_app.py` | headless dashboard smoke test (Streamlit `AppTest`) for every scenario, including the SIMULATED and MassGIS source labels |
+
+CI fails if coverage of `peakpilot/` drops below 90%. With only `pip install pytest`,
+the engine, scenario and MassGIS tests still run and the dashboard test is skipped.
 
 ## Demo in 60 seconds
 
@@ -299,7 +309,7 @@ peakpilot/massgis.py    bundled MassGIS loader (no runtime network)
 rust/peakpilot-core/    Rust port of the engine + CLI + Raspberry Pi Dockerfile
 scripts/parity_check.py Python vs Rust output comparison (run in CI)
 data/                   MassGIS CSVs + DATA.md provenance
-tests/                  pytest suite (engine correctness)
+tests/                  pytest suite (engine, scenarios, MassGIS, dashboard smoke)
 .kiro/                  steering, specs, and the Kiro usage write-up
 docs/                   demo script + submission checklist
 ```
